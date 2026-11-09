@@ -60,8 +60,15 @@ def test_scp_mapping():
 def test_ptbxl_dataset_loading():
     print("Testing PTB-XL Native Binary Dataset & Beat Slicer...", end=" ")
     data_dir = os.path.join(os.path.dirname(__file__), "data", "ptb-xl")
+    is_sample = False
+
     if not os.path.exists(data_dir):
-        print("⚠️ SKIPPED (data/ptb-xl symlink not found)")
+        # Fallback to embedded sample test record in git repository
+        data_dir = os.path.join(os.path.dirname(__file__), "data", "sample")
+        is_sample = True
+
+    if not os.path.exists(data_dir):
+        print("⚠️ SKIPPED (No dataset or sample directory found)")
         return
 
     # Load Fold 10 (Strict Inter-patient Test Set)
@@ -73,7 +80,11 @@ def test_ptbxl_dataset_loading():
     assert beat.shape == (12, 180), f"Invalid beat shape: {beat.shape}, expected (12, 180)"
     assert len(label) == 5, f"Invalid label length: {len(label)}"
     assert np.all(beat >= -1.0) and np.all(beat <= 1.0), "Beat voltage not normalized to [-1, 1]!"
-    print(f"✅ PASSED! (Loaded {len(dataset)} records from Fold 10)")
+
+    if is_sample:
+        print(f"✅ PASSED! (Verified with embedded test record: {len(dataset)} sample)")
+    else:
+        print(f"✅ PASSED! (Loaded {len(dataset)} records from Fold 10)")
 
 
 def test_tinyml_budget_calculation():

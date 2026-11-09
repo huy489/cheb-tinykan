@@ -1,0 +1,20 @@
+,description,diagnostic,form,rhythm,diagnostic_class,diagnostic_subclass,Statement Category,SCP-ECG Statement Description,AHA code,aECG REFID,CDISC Code,DICOM Code
+NDT,non-diagnostic T abnormalities,1.0,1.0,,STTC,STTC,other ST-T descriptive statements,non-diagnostic T abnormalities,,,,
+NST_,non-specific ST changes,1.0,1.0,,STTC,NST_,Basic roots for coding ST-T changes and abnormalities,non-specific ST changes,145,MDC_ECG_RHY_STHILOST,,
+DIG,digitalis-effect,1.0,1.0,,STTC,STTC,other ST-T descriptive statements,suggests digitalis-effect,205,,,
+LNGQT,long QT-interval,1.0,1.0,,STTC,STTC,other ST-T descriptive statements,long QT-interval,148,,,
+NORM,normal ECG,1.0,,,NORM,NORM,Normal/abnormal,normal ECG,1,,,F-000B7
+IMI,inferior myocardial infarction,1.0,,,MI,IMI,Myocardial Infarction,inferior myocardial infarction,161,,,
+ASMI,anteroseptal myocardial infarction,1.0,,,MI,AMI,Myocardial Infarction,anteroseptal myocardial infarction,165,,,
+LVH,left ventricular hypertrophy,1.0,,,HYP,LVH,Ventricular Hypertrophy,left ventricular hypertrophy,142,,C71076,
+LAFB,left anterior fascicular block,1.0,,,CD,LAFB/LPFB,Intraventricular and intra-atrial Conduction disturbances,left anterior fascicular block,101,MDC_ECG_BEAT_BLK_ANT_L_HEMI,C62267,D3-33140
+ISC_,non-specific ischemic,1.0,,,STTC,ISC_,Basic roots for coding ST-T changes and abnormalities,ischemic ST-T changes,226,,,
+IRBBB,incomplete right bundle branch block,1.0,,,CD,IRBBB,Intraventricular and intra-atrial Conduction disturbances,incomplete right bundle branch block,105,MDC_ECG_BEAT_RBB_BLK_INCOMP,C71048,D3-33112
+1AVB,first degree AV block,1.0,,,CD,_AVB,"Sinus node dysfunction, atrial and AV-conduction defects",first degree AV block,,MDC_ECG_RHY_AV_HEART_BLK_DEG_1,C111088,
+IVCD,non-specific intraventricular conduction disturbance (block),1.0,,,CD,IVCD,Intraventricular and intra-atrial Conduction disturbances,non-specific intraventricular conduction disturbance,107,MDC_ECG_BEAT_BLK_IVCD,C62271,D3-33000
+ISCAL,ischemic in anterolateral leads,1.0,,,STTC,ISCA,ischemic ST-T changes,in anterolateral leads,,,,
+CRBBB,complete right bundle branch block,1.0,,,CD,CRBBB,Intraventricular and intra-atrial Conduction disturbances,(complete) right bundle branch block,106,MDC_ECG_BEAT_RBB_BLK_COMP,C62270,D3-33110
+CLBBB,complete left bundle branch block,1.0,,,CD,CLBBB,Intraventricular and intra-atrial Conduction disturbances,(complete) left bundle branch block,104,MDC_ECG_BEAT_LBB_BLK_COMP,C62269,D3-33120 or 122752
+ILMI,inferolateral myocardial infarction,1.0,,,MI,IMI,Myocardial Infarction,inferolateral myocardial infarction,,,,
+LAO/LAE,left atrial overload/enlargement,1.0,,,HYP,LAO/LAE,Atrial statements,left atrial overload/enlargement,140,,,
+AMI,anterior myocardial infarction,1.0,,,MI,AMI,Myocardial Infarction,anterior myocardial infarction,160,,,
