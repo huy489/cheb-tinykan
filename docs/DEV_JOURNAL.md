@@ -156,7 +156,15 @@ python3 test_local.py
      `https://physionet-open.s3.amazonaws.com/ptb-xl/ptb-xl-1.0.3.zip` (~1.7GB, băng thông đạt ~80MB/s trên Colab, chỉ mất 20–25 giây tải).
   2. Tối ưu hóa giải nén bằng cách chỉ giải nén các thư mục cần thiết (`records500`, `ptbxl_database.csv`, `scp_statements.csv`), bỏ qua tập 100Hz để tiết kiệm 40% dung lượng đĩa và thời gian giải nén.
   3. Cố định đường dẫn `%cd /content` và `%cd /content/cheb-tinykan` trong Cell 1 để tránh tình trạng lồng thư mục `cheb-tinykan/cheb-tinykan`.
-  4. Cập nhật trực tiếp nội dung sửa lỗi vào Notebook `topic1` trên Google Drive.
+### 4.3. Khắc Phục Lỗi Hàm Tại Bước 3 & Bước 4 Trên Colab (Commit `d2e30e3`)
+- **Lỗi 1 tại Bước 3 (`test_local.py`):**
+  - *Hiện tượng:* `TypeError: all() received an invalid combination of arguments - got (out=NoneType, axis=NoneType, )`.
+  - *Nguyên nhân:* Môi trường Colab dùng NumPy 2.x. Khi nạp dữ liệu PTB-XL qua PyTorch, biến `beat` trả về kiểu `torch.Tensor`. Biểu thức `np.all(beat >= -1.0)` kích hoạt giao thức `__array_function__` của NumPy 2 truyền các tham số từ khóa `out=None, axis=None` vào hàm `torch.Tensor.all()`. Do PyTorch không hỗ trợ các từ khóa này, hàm bị văng lỗi kiểu dữ liệu.
+  - *Khắc phục:* Thay thế bằng phép so sánh vô hướng trực tiếp `min_v = float(beat.min())` và `max_v = float(beat.max())`. Chạy tương thích tuyệt đối 100% trên cả NumPy ndarray và PyTorch Tensor.
+- **Lỗi 2 tại Bước 4 (`train.py`):**
+  - *Hiện tượng:* `RuntimeError: one of the variables needed for gradient computation has been modified by an inplace operation: [torch.cuda.FloatTensor [128, 24]], which is output 0 of AsStrided, is at version 5; expected version 4 instead.`
+  - *Nguyên nhân:* Trong hàm tính đa thức truy hồi `ChebyshevPolynomial.forward_torch`, mã nguồn cũ cấp phát trước `T = torch.empty(...)` rồi gán mảng cắt lát tại chỗ (`T[:, :, 0] = ...`, `T[:, :, 1] = ...`, ..., `T[:, :, k+1] = ...`). Việc gán đè liên tiếp vào cùng một tensor `T` làm tăng version của tensor từ 0 lên 5, trong khi đồ thị đạo hàm tự động (PyTorch Autograd) đang cần giữ nguyên các lát cắt $T_k$ cũ để tính gradient lan truyền ngược cho phép co thắt ma trận `einsum`.
+  - *Khắc phục:* Viết lại hàm đệ quy `forward_torch` theo nguyên lý bất biến (immutable functional programming). Các bậc đa thức $T_0, T_1, \dots, T_k$ được sinh mới hoàn toàn vào danh sách Python `T_list = []`, sau đó dùng `torch.stack(T_list, dim=-1)` để ghép thành tensor 3D. Loại bỏ $100\%$ các phép gán in-place, đồ thị autograd hoàn toàn sạch và đạo hàm `loss.backward()` chạy êm mượt. Đồng thời chuyển toàn bộ `nn.ReLU(inplace=False)` trong Tokenizer.
 
 ---
 
