@@ -143,6 +143,14 @@ python3 test_local.py
 | **Suite 8** | Clinical Bedside Alert (`AC-06`) | Format chuẩn OLED/BLE, chỉ rõ nhánh mạch vành | Hiển thị đầy đủ thông số ST và nhánh LAD/RCA | **PASS** |
 | **Suite 9** | C99 CMSIS-NN Binary (`AC-04/05/07`)| Peak RAM $< 6\text{KB}$, Latency $< 4\text{ms}$, Error $< 1.5\%$ | **RAM 4.22 KB, Latency 0.20 ms, Error 0.012%** | **PASS** |
 
+### 4.1. Cập Nhật Xử Lý Dữ Liệu Kiểm Thử & Chống Bỏ Qua Test (Zero-Skip Verification)
+- **Vấn đề phát hiện:** Do tập dữ liệu đầy đủ PTB-XL v1.0.3 có dung lượng lớn (~1.5GB) nên bắt buộc phải cấu hình trong `.gitignore` (chống quá tải kho chứa GitHub). Khi môi trường mới (như Google Colab) thực hiện clone mã nguồn lần đầu, nếu chưa kịp tải dữ liệu thì `test_local.py` sẽ in cảnh báo `⚠️ SKIPPED (data/ptb-xl symlink not found)`.
+- **Giải pháp xử lý từ Dev (Commit `cbcef7c`):**
+  1. Trích xuất 1 bản ghi mẫu 12 đạo trình nguyên bản (`00001_hr.dat`, `00001_hr.hea`) kèm siêu dữ liệu rút gọn đặt trực tiếp vào [`data/sample/`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/data/sample) với dung lượng cực nhẹ (~124 KB).
+  2. Nâng cấp hàm `test_ptbxl_dataset_loading()` trong `test_local.py`: tự động kích hoạt cơ chế Fallback nạp mẫu kiểm chuẩn từ `data/sample/` khi chưa có thư mục `data/ptb-xl/`. Đảm bảo **$100\%$ các bài test luôn luôn chạy và PASS, tuyệt đối không bị skip**.
+  3. Tái cấu trúc thứ tự thực thi trong Colab Notebook: Đặt bước tải và giải nén dữ liệu PTB-XL (Cell 2) **trước** bước chạy kiểm thử `test_local.py` (Cell 3). Nhờ đó, khi Colab chạy đến Cell 3, nó sẽ nạp trực tiếp toàn bộ 2,198 bản ghi của Fold 10 và in thông báo nghiệm thu trọn vẹn:  
+     `Testing PTB-XL Native Binary Dataset & Beat Slicer... ✅ PASSED! (Loaded 2198 records from Fold 10)`
+
 ---
 
 ## 5. HƯỚNG DẪN KÍCH HOẠT HUẤN LUYỆN TRÊN GOOGLE COLAB GPU
