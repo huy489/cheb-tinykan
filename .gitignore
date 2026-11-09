@@ -5,5 +5,4 @@ data/ptb-xl/
 data/ptb-xl
 firmware/test_firmware
 .ipynb_checkpoints/
-/physionet.org/
 .company/
