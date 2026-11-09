@@ -148,8 +148,15 @@ python3 test_local.py
 - **Giải pháp xử lý từ Dev (Commit `cbcef7c`):**
   1. Trích xuất 1 bản ghi mẫu 12 đạo trình nguyên bản (`00001_hr.dat`, `00001_hr.hea`) kèm siêu dữ liệu rút gọn đặt trực tiếp vào [`data/sample/`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/data/sample) với dung lượng cực nhẹ (~124 KB).
   2. Nâng cấp hàm `test_ptbxl_dataset_loading()` trong `test_local.py`: tự động kích hoạt cơ chế Fallback nạp mẫu kiểm chuẩn từ `data/sample/` khi chưa có thư mục `data/ptb-xl/`. Đảm bảo **$100\%$ các bài test luôn luôn chạy và PASS, tuyệt đối không bị skip**.
-  3. Tái cấu trúc thứ tự thực thi trong Colab Notebook: Đặt bước tải và giải nén dữ liệu PTB-XL (Cell 2) **trước** bước chạy kiểm thử `test_local.py` (Cell 3). Nhờ đó, khi Colab chạy đến Cell 3, nó sẽ nạp trực tiếp toàn bộ 2,198 bản ghi của Fold 10 và in thông báo nghiệm thu trọn vẹn:  
-     `Testing PTB-XL Native Binary Dataset & Beat Slicer... ✅ PASSED! (Loaded 2198 records from Fold 10)`
+### 4.2. Khắc Phục Lỗi Tải Dữ Liệu 404 Trên Colab & Chuyển Sang Mirror AWS S3
+- **Chẩn đoán lỗi (Colab Cell 2):**
+  Lệnh tải cũ `wget https://physionet.org/files/ptb-xl/1.0.3/records500.tar.gz` trả về mã lỗi **`HTTP/2 404 Not Found`** (do PhysioNet không phân phối file nén theo tên này). Tệp tải về thực chất là một trang HTML báo lỗi dài 153 bytes, dẫn tới lệnh giải nén `tar -xzf` báo lỗi `gzip: stdin: unexpected end of file`. Kết quả là `data/ptb-xl` không có file tín hiệu `.dat`, làm `test_local.py` văng lỗi `AssertionError: Dataset is empty!`.
+- **Giải pháp xử lý từ Dev:**
+  1. Chuyển sang sử dụng **link phân phối chính thức tốc độ cao từ AWS S3 của PhysioNet**:  
+     `https://physionet-open.s3.amazonaws.com/ptb-xl/ptb-xl-1.0.3.zip` (~1.7GB, băng thông đạt ~80MB/s trên Colab, chỉ mất 20–25 giây tải).
+  2. Tối ưu hóa giải nén bằng cách chỉ giải nén các thư mục cần thiết (`records500`, `ptbxl_database.csv`, `scp_statements.csv`), bỏ qua tập 100Hz để tiết kiệm 40% dung lượng đĩa và thời gian giải nén.
+  3. Cố định đường dẫn `%cd /content` và `%cd /content/cheb-tinykan` trong Cell 1 để tránh tình trạng lồng thư mục `cheb-tinykan/cheb-tinykan`.
+  4. Cập nhật trực tiếp nội dung sửa lỗi vào Notebook `topic1` trên Google Drive.
 
 ---
 
