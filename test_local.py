@@ -62,7 +62,14 @@ def test_ptbxl_dataset_loading():
     data_dir = os.path.join(os.path.dirname(__file__), "data", "ptb-xl")
     is_sample = False
 
-    if not os.path.exists(data_dir):
+    # Check if full dataset exists AND has actual record files
+    has_full_dataset = False
+    if os.path.exists(data_dir):
+        records_dir = os.path.join(data_dir, "records500")
+        if os.path.exists(records_dir) and os.path.isdir(records_dir) and len(os.listdir(records_dir)) > 0:
+            has_full_dataset = True
+
+    if not has_full_dataset:
         # Fallback to embedded sample test record in git repository
         data_dir = os.path.join(os.path.dirname(__file__), "data", "sample")
         is_sample = True
