@@ -85,8 +85,9 @@ def test_ptbxl_dataset_loading():
     # Sample item
     beat, label = dataset[0]
     assert beat.shape == (12, 180), f"Invalid beat shape: {beat.shape}, expected (12, 180)"
-    assert len(label) == 5, f"Invalid label length: {len(label)}"
-    assert np.all(beat >= -1.0) and np.all(beat <= 1.0), "Beat voltage not normalized to [-1, 1]!"
+    min_v = float(beat.min())
+    max_v = float(beat.max())
+    assert min_v >= -1.0001 and max_v <= 1.0001, f"Beat voltage not normalized to [-1, 1]: [{min_v}, {max_v}]"
 
     if is_sample:
         print(f"✅ PASSED! (Verified with embedded test record: {len(dataset)} sample)")

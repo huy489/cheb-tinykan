@@ -120,7 +120,7 @@ def evaluate(model, loader, device):
             x = x.to(device)
             probs = model.predict_probabilities(x)
             all_probs.append(probs.cpu().numpy())
-            all_targets.append(y.numpy())
+            all_targets.append(y.cpu().numpy())
 
     all_probs = np.concatenate(all_probs, axis=0)
     all_targets = np.concatenate(all_targets, axis=0)

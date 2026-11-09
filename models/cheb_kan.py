@@ -53,6 +53,7 @@ class ChebyshevPolynomial:
     def forward_torch(x, degree=4):
         """
         PyTorch implementation vectorized over batches and features.
+        Uses out-of-place list accumulation and torch.stack to guarantee clean autograd backward graph.
         Args:
             x: Tensor of shape (batch, in_features)
             degree: int, polynomial degree
@@ -60,15 +61,16 @@ class ChebyshevPolynomial:
             T: Tensor of shape (batch, in_features, degree + 1)
         """
         x_clamped = torch.clamp(x, -1.0, 1.0)
-        batch_size, in_features = x_clamped.shape
-        T = torch.empty((batch_size, in_features, degree + 1), device=x.device, dtype=x.dtype)
+        T_list = [torch.ones_like(x_clamped)]
 
-        T[:, :, 0] = 1.0
         if degree >= 1:
-            T[:, :, 1] = x_clamped
+            T_list.append(x_clamped)
+
         for k in range(1, degree):
-            T[:, :, k + 1] = 2.0 * x_clamped * T[:, :, k] - T[:, :, k - 1]
-        return T
+            T_next = 2.0 * x_clamped * T_list[k] - T_list[k - 1]
+            T_list.append(T_next)
+
+        return torch.stack(T_list, dim=-1)
 
 
 if nn is not None:

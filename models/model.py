@@ -53,7 +53,7 @@ if nn is not None:
                 bias=False
             )
             self.bn = nn.BatchNorm1d(out_channels)
-            self.act = nn.ReLU(inplace=True)
+            self.act = nn.ReLU(inplace=False)
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             x = self.depthwise(x)
@@ -74,7 +74,7 @@ if nn is not None:
             self.stage1 = nn.Sequential(
                 nn.Conv1d(in_channels, 24, kernel_size=7, stride=2, padding=3, bias=False),
                 nn.BatchNorm1d(24),
-                nn.ReLU(inplace=True)
+                nn.ReLU(inplace=False)
             )
             # Stage 2: Depthwise Separable Conv1D (k=5, s=2, c=48) -> (B, 48, 45)
             self.stage2 = DepthwiseSeparableConv1d(24, 48, kernel_size=5, stride=2)
