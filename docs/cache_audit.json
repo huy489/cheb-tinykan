@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-11-11T17:29:27+0700",
+  "dsp_time_seconds": 33.87,
+  "total_time_seconds": 41.96,
+  "cache_file": "data/cache/ptbxl_preprocessed_250hz.npz",
+  "cache_size_mb": 167.53,
+  "tensor_shape": [
+    21799,
+    12,
+    180
+  ],
+  "dtype": "float32",
+  "sha256_beats": "8f3e79ed5a0cd74d6eca71529cf13a585fbcf9751e0d2e17d7168a66952df7c8",
+  "sha256_labels": "1f8f738aeb387f9f4decf43737352bab207d2caf27c67b1353b61621414e934d",
+  "zero_patient_leakage_verified": true,
+  "splits": {
+    "train_folds_1_8": {
+      "num_records": 17418,
+      "num_patients": 15023,
+      "sqi_valid_count": 17381,
+      "sqi_rejected_count": 37,
+      "class_counts": {
+        "NORM": 7596,
+        "AMI": 2464,
+        "IMI": 2630,
+        "LMI": 950,
+        "SMI": 2051
+      }
+    },
+    "val_fold_9": {
+      "num_records": 2183,
+      "num_patients": 1942,
+      "sqi_valid_count": 2172,
+      "sqi_rejected_count": 11,
+      "class_counts": {
+        "NORM": 955,
+        "AMI": 306,
+        "IMI": 327,
+        "LMI": 120,
+        "SMI": 255
+      }
+    },
+    "test_fold_10": {
+      "num_records": 2198,
+      "num_patients": 1904,
+      "sqi_valid_count": 2191,
+      "sqi_rejected_count": 7,
+      "class_counts": {
+        "NORM": 963,
+        "AMI": 306,
+        "IMI": 328,
+        "LMI": 117,
+        "SMI": 256
+      }
+    }
+  }
+}

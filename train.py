@@ -40,9 +40,28 @@ def set_seed(seed: int = 42):
             torch.backends.cudnn.deterministic = True
 
 
+def compute_roc_auc(y_true_col: np.ndarray, y_prob_col: np.ndarray) -> float:
+    """Exact Wilcoxon-Mann-Whitney ROC-AUC with tie handling in pure NumPy."""
+    pos = (y_true_col == 1)
+    n_pos = int(np.sum(pos))
+    n_neg = int(len(y_true_col) - n_pos)
+    if n_pos == 0 or n_neg == 0:
+        return 0.5
+    order = np.argsort(y_prob_col, kind="mergesort")
+    sorted_probs = y_prob_col[order]
+    sorted_pos = pos[order]
+    ranks = np.arange(1, len(y_prob_col) + 1, dtype=np.float64)
+    _, idx, counts = np.unique(sorted_probs, return_index=True, return_counts=True)
+    for start, cnt in zip(idx, counts):
+        if cnt > 1:
+            ranks[start:start + cnt] = np.mean(ranks[start:start + cnt])
+    rank_sum_pos = np.sum(ranks[sorted_pos])
+    return float((rank_sum_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg))
+
+
 def calculate_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5):
     """
-    Computes Macro-F1, Sensitivity, Specificity, and per-head metrics without external sklearn.
+    Computes Macro-F1, Macro-AUC, Sensitivity, Specificity, and per-head metrics without external sklearn.
     Args:
         y_true: (N, 5) binary ground truth
         y_prob: (N, 5) float probabilities in [0, 1]
@@ -51,6 +70,7 @@ def calculate_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float =
     num_classes = y_true.shape[1]
 
     f1_scores = []
+    auc_scores = []
     sensitivities = []
     specificities = []
 
@@ -66,13 +86,16 @@ def calculate_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float =
         recall = tp / (tp + fn + 1e-8)
         f1 = 2 * precision * recall / (precision + recall + 1e-8)
         spec = tn / (tn + fp + 1e-8)
+        auc = compute_roc_auc(y_true[:, c], y_prob[:, c])
 
         f1_scores.append(f1)
+        auc_scores.append(auc)
         sensitivities.append(recall)
         specificities.append(spec)
 
         per_class[TARGET_CLASSES[c]] = {
             "f1": float(f1),
+            "auc": float(auc),
             "sensitivity": float(recall),
             "specificity": float(spec),
             "support": int(np.sum(y_true[:, c]))
@@ -80,6 +103,7 @@ def calculate_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float =
 
     return {
         "macro_f1": float(np.mean(f1_scores)),
+        "macro_auc": float(np.mean(auc_scores)),
         "macro_sensitivity": float(np.mean(sensitivities)),
         "macro_specificity": float(np.mean(specificities)),
         "per_class": per_class
@@ -131,12 +155,16 @@ def evaluate(model, loader, device):
 def main():
     parser = argparse.ArgumentParser(description="Cheb-TinyKAN Training Pipeline")
     parser.add_argument("--data_dir", type=str, default="./data/ptb-xl", help="Path to PTB-XL root")
+    parser.add_argument("--cache_path", type=str, default=None, help="Optional path to preprocessed .npz cache")
     parser.add_argument("--epochs", type=int, default=60, help="Training epochs")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--l1_lambda", type=float, default=1e-4, help="L1 sparsity penalty weight")
+    parser.add_argument("--alpha", type=float, default=0.25, help="Focal loss alpha weight for positive class")
+    parser.add_argument("--gamma", type=float, default=2.0, help="Focal loss gamma focusing parameter")
     parser.add_argument("--device", type=str, default="cuda" if torch and torch.cuda.is_available() else "cpu")
     parser.add_argument("--save_dir", type=str, default="./checkpoints", help="Output directory")
+    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint_last.pth if present")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
@@ -150,7 +178,7 @@ def main():
 
     print("=" * 70)
     print("🚀 CHEB-TINYKAN: ORTHOGONAL KAN FOR EDGE ECG ARRHYTHMIA & MI LOCALIZATION")
-    print(f"Device: {device} | Epochs: {args.epochs} | Batch: {args.batch_size} | L1: {args.l1_lambda}")
+    print(f"Device: {device} | Epochs: {args.epochs} | Batch: {args.batch_size} | L1: {args.l1_lambda} | Alpha: {args.alpha}")
     print(f"Data directory: {args.data_dir}")
     print("=" * 70)
 
@@ -159,7 +187,8 @@ def main():
     train_loader, val_loader, test_loader = create_dataloaders(
         args.data_dir,
         batch_size=args.batch_size,
-        num_workers=2 if device.type == 'cuda' else 0
+        num_workers=2 if device.type == 'cuda' else 0,
+        cache_path=args.cache_path
     )
     print(f"Train samples (Folds 1-8): {len(train_loader.dataset)}")
     print(f"Val samples   (Fold 9):    {len(val_loader.dataset)}")
@@ -178,27 +207,43 @@ def main():
     # 3. Optimizer, Scheduler, Loss
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-5)
-    criterion = MultiLabelFocalLoss(alpha=0.25, gamma=2.0)
+    criterion = MultiLabelFocalLoss(alpha=args.alpha, gamma=args.gamma)
 
+    start_epoch = 1
     best_val_f1 = 0.0
     best_epoch = 0
     history = []
 
+    last_ckpt_path = os.path.join(args.save_dir, "checkpoint_last.pth")
+    if args.resume and os.path.exists(last_ckpt_path):
+        ckpt = torch.load(last_ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        if "scheduler_state_dict" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        start_epoch = ckpt["epoch"] + 1
+        best_val_f1 = ckpt.get("best_val_f1", 0.0)
+        best_epoch = ckpt.get("best_epoch", 0)
+        history = ckpt.get("history", [])
+        print(f"♻️ Resuming from epoch {start_epoch} (Best Val F1 so far: {best_val_f1*100:.2f}% at Ep {best_epoch})")
+
     # 4. Training Loop
     start_time = time.time()
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         ep_start = time.time()
         train_loss = train_epoch(model, train_loader, optimizer, criterion, args.l1_lambda, device)
         scheduler.step()
 
         val_metrics, _, _ = evaluate(model, val_loader, device)
         val_f1 = val_metrics["macro_f1"]
+        val_auc = val_metrics["macro_auc"]
         ep_time = time.time() - ep_start
 
         history.append({
             "epoch": epoch,
             "train_loss": train_loss,
             "val_macro_f1": val_f1,
+            "val_macro_auc": val_auc,
             "val_per_class": val_metrics["per_class"],
             "lr": optimizer.param_groups[0]["lr"]
         })
@@ -212,29 +257,48 @@ def main():
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "val_macro_f1": val_f1,
+                "val_macro_auc": val_auc,
                 "config": vars(args)
             }, os.path.join(args.save_dir, "model_best.pth"))
 
+        # Always save rolling checkpoint to prevent lost progress on disconnects
+        torch.save({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "best_val_f1": best_val_f1,
+            "best_epoch": best_epoch,
+            "history": history,
+            "config": vars(args)
+        }, last_ckpt_path)
+
         marker = "🔥 BEST" if is_best else ""
-        print(f"Epoch [{epoch:02d}/{args.epochs:02d}] - Loss: {train_loss:.4f} | Val F1: {val_f1*100:.2f}% | Time: {ep_time:.1f}s {marker}")
+        print(f"Epoch [{epoch:02d}/{args.epochs:02d}] - Loss: {train_loss:.4f} | Val F1: {val_f1*100:.2f}% | Val AUC: {val_auc:.4f} | Time: {ep_time:.1f}s {marker}")
 
     total_time = time.time() - start_time
     print("=" * 70)
     print(f"🎉 Training Completed in {total_time/60:.2f} mins! Best Val Macro-F1: {best_val_f1*100:.2f}% (Epoch {best_epoch})")
 
-    # 5. Final Evaluation on Strict Inter-patient Test Set (Fold 10)
-    print("\n🔬 Final Inter-patient Testing on Fold 10 (Zero-Leakage Benchmark):")
-    checkpoint = torch.load(os.path.join(args.save_dir, "model_best.pth"), map_location=device)
+    # Print Validation per-class summary of best checkpoint
+    print("\n🔍 Loading Best Model for Strict Inter-patient Testing on Fold 10 (Zero-Leakage):")
+    checkpoint = torch.load(os.path.join(args.save_dir, "model_best.pth"), map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
 
+    val_metrics_best, _, _ = evaluate(model, val_loader, device)
+    print("\n📊 Validation Fold 9 Per-Class Breakdown (Best Checkpoint):")
+    for cls_name, m in val_metrics_best["per_class"].items():
+        print(f"  - {cls_name:18s}: F1 = {m['f1']*100:5.2f}% | AUC = {m['auc']:.4f} | Sens = {m['sensitivity']*100:5.2f}% | Spec = {m['specificity']*100:5.2f}% (N={m['support']})")
+
     test_metrics, test_probs, test_targets = evaluate(model, test_loader, device)
-    print(f"  >> Test Set Macro-F1:          {test_metrics['macro_f1']*100:.2f}%")
+    print(f"\n  >> Test Set Macro-F1:          {test_metrics['macro_f1']*100:.2f}%")
+    print(f"  >> Test Set Macro-AUC ROC:     {test_metrics['macro_auc']:.4f}")
     print(f"  >> Test Set Macro-Sensitivity: {test_metrics['macro_sensitivity']*100:.2f}%")
     print(f"  >> Test Set Macro-Specificity: {test_metrics['macro_specificity']*100:.2f}%")
 
-    print("\n📊 Per-Territory Clinical Metrics:")
+    print("\n📊 Test Fold 10 Per-Territory Clinical Metrics:")
     for cls_name, m in test_metrics["per_class"].items():
-        print(f"  - {cls_name:18s}: F1 = {m['f1']*100:5.2f}% | Sens = {m['sensitivity']*100:5.2f}% | Spec = {m['specificity']*100:5.2f}% (N={m['support']})")
+        print(f"  - {cls_name:18s}: F1 = {m['f1']*100:5.2f}% | AUC = {m['auc']:.4f} | Sens = {m['sensitivity']*100:5.2f}% | Spec = {m['specificity']*100:5.2f}% (N={m['support']})")
 
     # 6. Sparsification & Pruning Audit
     pruned_edges = model.bottleneck_kan.prune_edges(threshold=1e-3)
@@ -245,6 +309,7 @@ def main():
     output_summary = {
         "best_epoch": best_epoch,
         "best_val_macro_f1": best_val_f1,
+        "val_metrics_best": val_metrics_best,
         "test_metrics": test_metrics,
         "budget": budget,
         "pruned_edges_ratio": pruned_edges / total_edges,

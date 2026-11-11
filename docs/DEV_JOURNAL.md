@@ -166,29 +166,36 @@ python3 test_local.py
   - *Nguyên nhân:* Trong hàm tính đa thức truy hồi `ChebyshevPolynomial.forward_torch`, mã nguồn cũ cấp phát trước `T = torch.empty(...)` rồi gán mảng cắt lát tại chỗ (`T[:, :, 0] = ...`, `T[:, :, 1] = ...`, ..., `T[:, :, k+1] = ...`). Việc gán đè liên tiếp vào cùng một tensor `T` làm tăng version của tensor từ 0 lên 5, trong khi đồ thị đạo hàm tự động (PyTorch Autograd) đang cần giữ nguyên các lát cắt $T_k$ cũ để tính gradient lan truyền ngược cho phép co thắt ma trận `einsum`.
   - *Khắc phục:* Viết lại hàm đệ quy `forward_torch` theo nguyên lý bất biến (immutable functional programming). Các bậc đa thức $T_0, T_1, \dots, T_k$ được sinh mới hoàn toàn vào danh sách Python `T_list = []`, sau đó dùng `torch.stack(T_list, dim=-1)` để ghép thành tensor 3D. Loại bỏ $100\%$ các phép gán in-place, đồ thị autograd hoàn toàn sạch và đạo hàm `loss.backward()` chạy êm mượt. Đồng thời chuyển toàn bộ `nn.ReLU(inplace=False)` trong Tokenizer.
 
+### 4.4. Xử Lý Triệt Để Hết Đơn Vị Tính Toán Colab & Chuyển Đổi Luồng Hybrid Local-First
+- **Phân tích sự cố (2026-11-11):**
+  - Trong phiên Colab T4 GPU ngày 11/11, quá trình train chạy tới **Epoch 24/60** thì hết Compute Units (~1,8 giờ GPU), vì mỗi epoch mất **260–275 giây**.
+  - Nguyên nhân: [`PTBXLDataset.__getitem__`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/data/ptbxl_dataset.py) đọc lại đĩa cứng và tính lại toàn bộ chuỗi DSP (SWMA + `filtfilt` 12 kênh) lặp đi lặp lại trên CPU ở mọi epoch, làm GPU T4 ngồi chờ CPU >99% thời gian.
+- **Giải pháp Hybrid Local-First theo chỉ đạo của CEO:**
+  1. **Vector hóa DSP ([`dsp_preprocessing.py`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/data/dsp_preprocessing.py)):** Dùng `uniform_filter1d(..., mode='nearest')` và `signal.filtfilt(..., axis=0)`. Kiểm chứng sai số cực đại so với bản tuần tự trên 50 mẫu Fold 9 chỉ là **`5.96e-08`** (tương đương độ chính xác máy `float32`).
+  2. **Tiền xử lý 1 lần tại máy Local ([`scripts/prepare_cache.py`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/scripts/prepare_cache.py)):** Chạy 7 worker CPU xử lý trọn vẹn 21.799 bản ghi trong **33,87 giây**, xuất cache nén **167,53 MB** (`data/cache/ptbxl_preprocessed_250hz.npz`) và biên bản kiểm toán SHA-256 [`docs/cache_audit.json`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/cache_audit.json) (khẳng định 0 bệnh nhân trùng giữa Train/Val/Test).
+  3. **Huấn luyện tại Local qua môi trường `.venv` cô lập:** Cài Python 3.12 + PyTorch CPU bằng `uv` (không chạm Python 3.14 hệ thống). Với 16.837 tham số đọc từ RAM Cache, **tốc độ train trên CPU Intel i5-8365U đạt ~3 giây/epoch** ($\approx 3\text{ phút}$ cho trọn vẹn 60 epochs — nhanh hơn **~90 lần** so với Colab trước đây mà **0 tốn Compute Units**!).
+  4. **Ghi nhận Liêm chính Khoa học:** Toàn bộ vết chỉnh sửa, lý do và kết quả từng phiên được lưu tại [`docs/SCIENTIFIC_INTEGRITY_LOG.md`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/SCIENTIFIC_INTEGRITY_LOG.md).
+
 ---
 
-## 5. HƯỚNG DẪN KÍCH HOẠT HUẤN LUYỆN TRÊN GOOGLE COLAB GPU
+## 5. HƯỚNG DẪN THỰC THI HYBRID (LOCAL-FIRST & COLAB GPU KHI CẦN)
 
-Sau khi mã nguồn được đẩy lên repository `https://github.com/huy489/cheb-tinykan`:
+### A. Chạy toàn bộ tiền xử lý, kiểm thử và huấn luyện `Cheb-TinyKAN` tại Local (Khuyên dùng)
+```bash
+# 1. Sinh bộ cache đã lọc DSP 1 lần (~34 giây)
+.venv/bin/python scripts/prepare_cache.py
 
-1. **Mở Google Colab Notebook:**
-   - Link notebook đã cấu hình: [Google Colab Topic 1 Notebook](https://colab.research.google.com/drive/1MIsb2IaLH9vVgFflKOKt2FizSpxSOwD9)
-2. **Kích hoạt phần cứng GPU:**
-   - Menu: **Runtime** $\to$ **Change runtime type** $\to$ Chọn **T4 GPU** $\to$ **Save**.
-3. **Thực thi toàn bộ (Run all):**
-   - Chọn **Runtime** $\to$ **Run all** (hoặc nhấn `Ctrl + F9`).
-   - Notebook sẽ tự động:
-     - Clone repository `cheb-tinykan`.
-     - Tải và giải nén bộ dữ liệu chuẩn PTB-XL 1.0.3 (500Hz).
-     - Chạy huấn luyện 60 epochs với Focal Loss + CosineAnnealingLR.
-     - Tự động lưu `model_best.pth` và `training_metrics.json` vào thư mục Google Drive: `ChebTinyKAN_Results/`.
-4. **Tự động đồng bộ kết quả về máy local:**
-   - Chạy lệnh sau trên terminal máy local:
-     ```bash
-     python3 colab_sync.py
-     ```
-   - Script sử dụng Google Service Account sẽ tự động tải checkpoint đã huấn luyện từ Google Drive về thư mục `checkpoints/`.
+# 2. Chạy đủ 10/10 suite kiểm thử (bao gồm PyTorch Autograd & Firmware C99)
+.venv/bin/python test_local.py
+
+# 3. Huấn luyện 60 epochs (~3 phút trên CPU local, hỗ trợ --resume & lưu checkpoint mỗi epoch)
+.venv/bin/python train.py --epochs 60 --batch_size 128 --lr 1e-3 --device cpu --resume --save_dir ./checkpoints
+```
+
+### B. Đẩy lên Google Colab GPU (Chỉ dùng cho tác vụ nặng / Đối chứng mạng lớn)
+1. Mở [Google Colab Topic 1 Notebook](https://colab.research.google.com/drive/1MIsb2IaLH9vVgFflKOKt2FizSpxSOwD9), chọn Runtime **T4 GPU**.
+2. Chạy `bash scripts/train_colab.sh` (đã tích hợp sẵn bước `prepare_cache.py` và `--resume` để tiết kiệm >98% compute units).
+3. Đồng bộ kết quả về local bằng `python3 colab_sync.py`.
 
 ---
 *Tài liệu được lập bởi Tech Lead (`/dev`) và lưu trữ vĩnh viễn tại kho dự án để CEO theo dõi.*

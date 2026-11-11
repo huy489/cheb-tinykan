@@ -239,6 +239,40 @@ def test_c99_firmware_binary():
     print("✅ PASSED! (All C99 CMSIS-NN tests passed cleanly)")
 
 
+def test_pytorch_end_to_end_backward():
+    print("Testing PyTorch Forward + Focal Loss + Autograd Backward... ", end=" ")
+    try:
+        import torch
+        from models.model import ChebTinyKAN
+        from losses.focal_loss import MultiLabelFocalLoss
+    except ImportError:
+        print("⚠️ SKIPPED (PyTorch not available in current interpreter)")
+        return
+
+    model = ChebTinyKAN(in_channels=12, num_classes=5, degree=4)
+    criterion = MultiLabelFocalLoss(alpha=0.25, gamma=2.0)
+
+    x = torch.randn(4, 12, 180)
+    y = torch.tensor([
+        [1.0, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0, 0.0],
+    ], dtype=torch.float32)
+
+    logits = model(x)
+    assert logits.shape == (4, 5), f"Unexpected logit shape: {logits.shape}"
+    loss = criterion(logits, y) + 1e-4 * model.l1_regularization_loss()
+    loss.backward()
+
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            assert param.grad is not None, f"Missing gradient on {name}"
+            assert torch.isfinite(param.grad).all(), f"Non-finite gradient on {name}"
+
+    print("✅ PASSED! (Autograd clean, finite gradients verified)")
+
+
 if __name__ == "__main__":
     print("=" * 65)
     print("🧪 RUNNING CHEB-TINYKAN EXPANDED SYSTEM VERIFICATION TEST SUITE")
@@ -252,6 +286,7 @@ if __name__ == "__main__":
     test_easi_dower_ablation()
     test_clinical_symbolic_reporting()
     test_c99_firmware_binary()
+    test_pytorch_end_to_end_backward()
     print("=" * 65)
-    print("🎉 ALL 9 SYSTEM TEST SUITES PASSED! Phase 1, 2, 3, 4 Verified 100%.")
+    print("🎉 ALL SYSTEM TEST SUITES PASSED! Phase 1, 2, 3, 4 Verified 100%.")
     print("=" * 65)

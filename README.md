@@ -30,14 +30,22 @@ exe/topic1/
 │   ├── quantization.py            # Mô phỏng Q1.15, FakeQuant, L1 Edge Pruning & C Header Export
 │   └── symbolic_distillation.py   # Chuyển đổi đại số đa thức chính tắc & báo động lâm sàng
 ├── data/                          # Xử lý dữ liệu & Chuỗi DSP tại biên
-│   ├── dsp_preprocessing.py       # Bộ lọc SWMA (W=151), Butterworth IIR filtfilt, SQI & R-Slicer
+│   ├── dsp_preprocessing.py       # Bộ lọc SWMA vector hóa (W=151), IIR filtfilt(axis=0), SQI & R-Slicer
 │   ├── easi_dower.py              # Ma trận Dower 12x3 phục vụ Ablation Study rút gọn đạo trình
-│   ├── ptbxl_dataset.py           # Native int16 binary loader, downsampling 250Hz, Fold 1-10
+│   ├── ptbxl_dataset.py           # Native int16 loader + CachedPTBXLDataset RAM cache (167.5 MB)
 │   └── scp_mapping.py             # Ánh xạ SCP-ECG 5 phân vùng giải phẫu (NORM, AMI, IMI, LMI, SMI)
+├── docs/                          # Tài liệu kỹ thuật & Liêm chính Khoa học
+│   ├── ARCHITECTURE_DEEPDIVE.md   # Bản vẽ kỹ thuật toàn cảnh: DSP, Layers & KAN Activations
+│   ├── DEV_JOURNAL.md             # Nhật ký thay đổi mã nguồn chi tiết của Dev
+│   ├── SCIENTIFIC_INTEGRITY_LOG.md# Nhật ký minh chứng liêm chính khoa học & SHA-256 checksums
+│   └── cache_audit.json           # Biên bản kiểm toán Zero Data Leakage across Folds 1-10
 ├── losses/                        # Hàm mất mát tối ưu hóa biên
 │   └── focal_loss.py              # Multi-Label Focal Loss (gamma=2.0, alpha=0.25)
-├── train.py                       # Script huấn luyện & đối chuẩn Inter-patient 10-fold
-├── test_local.py                  # Bộ kiểm thử tự động toàn diện mở rộng (9/9 tests passed)
+├── scripts/                       # Tự động hóa tiền xử lý & Colab
+│   ├── prepare_cache.py           # Tiền xử lý DSP đa nhân local (33.9s cho toàn bộ 21,799 bản ghi)
+│   └── train_colab.sh             # Script chạy GPU 1-Click trên Colab khi cần đối chứng mạng lớn
+├── train.py                       # Script huấn luyện & đối chuẩn Inter-patient 10-fold (hỗ trợ --resume & AUC)
+├── test_local.py                  # Bộ kiểm thử tự động toàn diện mở rộng (10/10 tests passed)
 ├── colab_sync.py                  # Cầu nối Service Account tự động kéo kết quả từ Drive
 └── README.md                      # Giới thiệu tổng quan workspace
 ```
@@ -45,8 +53,8 @@ exe/topic1/
 ---
 
 ## 🎯 Trạng thái Hiện tại
-- **Giai đoạn:** `[IN_DEV]` (Đã hoàn thiện trọn vẹn Phase 1, Phase 2, Phase 3 và Phase 4 tại local, **tuân thủ chỉ thị chưa push lên Git**).
-- **Kiểm định chất lượng:** Bộ kiểm định `test_local.py` đã vượt qua **9/9 bài kiểm tra** với độ chính xác 100%:
+- **Chiến lược thực thi:** **Hybrid Local-First** — Toàn bộ DSP (33,9s cho 21.799 bản ghi), kiểm thử PyTorch (`test_local.py`), biên dịch C99 (`test_firmware.c`), và huấn luyện 60 epochs Cheb-TinyKAN (~3s/epoch qua RAM Cache) được thực thi trực tiếp tại máy Local; chỉ đẩy lên Colab GPU cho các mô hình đối chứng nặng.
+- **Kiểm định chất lượng:** Bộ kiểm định [`test_local.py`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/test_local.py) đã vượt qua **10/10 bài kiểm tra** với độ chính xác 100%:
   1. Toán học truy hồi Chebyshev 3 phần tử (Sai số < 0.05% trên miền $[-1, 1]$).
   2. Ánh xạ đa nhãn lâm sàng SCP-ECG (Tách biệt 5 đầu ra độc lập).
   3. Đọc dữ liệu nhị phân PTB-XL Fold 10 & Slicer nhịp (180 mẫu/nhịp).
@@ -56,11 +64,14 @@ exe/topic1/
   7. Bộ tái tạo 12 đạo trình EASI Dower (Ablation Study AC-09).
   8. Mô-đun chưng cất ký hiệu & sinh chuỗi cảnh báo lâm sàng cho bác sĩ tim mạch.
   9. Biên dịch và thực thi nhị phân động cơ C99 CMSIS-NN (Độ trễ 0.20 ms/nhịp, Peak RAM 4.22 KB).
+  10. Kiểm thử Forward + Multi-Label Focal Loss + PyTorch Autograd Backward (Gradient sạch, hữu hạn).
 
 ---
 
 ## 🔗 Liên kết Nhanh
+- [🛡️ Nhật ký Chỉnh sửa & Liêm chính Khoa học](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/SCIENTIFIC_INTEGRITY_LOG.md)
+- [📜 Nhật ký Kỹ thuật Dev](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/DEV_JOURNAL.md)
+- [📘 Bản Vẽ Kiến Trúc Toàn Cảnh (DSP & Layers)](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/ARCHITECTURE_DEEPDIVE.md)
 - [📋 Kanban Board](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/BOARD.md)
-- [📘 Bản Vẽ Kiến Trúc Toàn Cảnh (DSP & Layers)](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/docs/ARCHITECTURE_DEEPDIVE.md)
 - [📋 Bản Đặc tả Sản xuất PRD-01](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/prd/PRD-01-CHEB-TINYKAN.md)
 - [🤝 Biên bản Đồng thuận Khoa học Tam bên](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/research/CONSENSUS-01-CHEB-TINYKAN.md)

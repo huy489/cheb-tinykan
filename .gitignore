@@ -1,8 +1,12 @@
 __pycache__/
 *.pyc
+.venv/
+venv/
 checkpoints/*.pth
 data/ptb-xl/
 data/ptb-xl
+data/cache/
+*.npz
 firmware/test_firmware
 .ipynb_checkpoints/
 .company/

@@ -12,8 +12,10 @@ import numpy as np
 from typing import Tuple, Dict, List, Optional
 try:
     import scipy.signal as signal
+    from scipy.ndimage import uniform_filter1d
 except ImportError:
     signal = None
+    uniform_filter1d = None
 
 
 class SWMAFilter:
@@ -42,6 +44,11 @@ class SWMAFilter:
         Returns:
             detrended_ecg: (samples, leads) array
         """
+        if uniform_filter1d is not None:
+            # Vectorized C implementation mathematically equivalent to edge-padded moving average
+            baseline = uniform_filter1d(ecg, size=self.window_size, axis=0, mode='nearest')
+            return (ecg - baseline).astype(np.float32)
+
         filtered = np.empty_like(ecg, dtype=np.float32)
         for ch in range(ecg.shape[1]):
             filtered[:, ch] = self.filter_1d(ecg[:, ch])
@@ -68,13 +75,10 @@ class ButterworthBandpassNotch:
             # Fallback if scipy is unavailable
             return ecg
 
-        filtered = np.empty_like(ecg, dtype=np.float32)
-        for ch in range(ecg.shape[1]):
-            # Forward-backward filter to ensure zero phase distortion (critical for ST-T morphology)
-            y_band = signal.filtfilt(self.b_band, self.a_band, ecg[:, ch])
-            y_clean = signal.filtfilt(self.b_notch, self.a_notch, y_band)
-            filtered[:, ch] = y_clean
-        return filtered
+        # Forward-backward filter along axis=0 across all channels simultaneously
+        y_band = signal.filtfilt(self.b_band, self.a_band, ecg, axis=0)
+        y_clean = signal.filtfilt(self.b_notch, self.a_notch, y_band, axis=0)
+        return y_clean.astype(np.float32)
 
 
 class SignalQualityIndex:

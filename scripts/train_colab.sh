@@ -23,16 +23,26 @@ rm -rf /content/cheb-tinykan/data/ptb-xl
 ln -s /content/dataset/ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3 /content/cheb-tinykan/data/ptb-xl
 echo "✅ PTB-XL dataset verified at data/ptb-xl"
 
-echo "🧪 [3/4] Running Comprehensive Verification Test Suites (9/9 suites)..."
+echo "🧪 [3/5] Running Comprehensive Verification Test Suites (10/10 suites)..."
 python test_local.py
 
-echo "🔥 [4/4] Starting 60-Epoch Cheb-TinyKAN Training on GPU (T4)..."
+echo "⚡ [4/5] Building Preprocessed RAM Cache (167 MB) once on CPU..."
+if [ ! -f /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz ]; then
+    python scripts/prepare_cache.py \
+        --data_dir /content/cheb-tinykan/data/ptb-xl \
+        --output /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz \
+        --audit /content/cheb-tinykan/docs/cache_audit.json
+fi
+
+echo "🔥 [5/5] Starting 60-Epoch Cheb-TinyKAN Training on GPU (T4) using RAM Cache..."
 python train.py \
     --data_dir /content/cheb-tinykan/data/ptb-xl \
+    --cache_path /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz \
     --epochs 60 \
     --batch_size 128 \
     --lr 1e-3 \
     --device cuda \
+    --resume \
     --save_dir /content/cheb-tinykan/checkpoints
 
 echo "🎉 [COMPLETE] Training and Evaluation Finished Successfully!"

@@ -107,44 +107,91 @@ class PTBXLDataset(BASE_DATASET):
         return beat, label
 
 
+class CachedPTBXLDataset(BASE_DATASET):
+    """
+    High-speed RAM-cached Dataset backed by precomputed DSP outputs (.npz).
+    Eliminates redundant per-epoch CPU signal processing while keeping strict fold isolation.
+    """
+
+    def __init__(self, cache_path: str, folds: List[int]):
+        if not os.path.exists(cache_path):
+            raise FileNotFoundError(f"Preprocessed cache not found at: {cache_path}")
+
+        data = np.load(cache_path)
+        mask = np.isin(data["folds"], list(folds))
+
+        self.beats = np.ascontiguousarray(data["beats"][mask], dtype=np.float32)
+        self.labels = np.ascontiguousarray(data["labels"][mask], dtype=np.float32)
+        self.folds_arr = data["folds"][mask]
+
+    def __len__(self) -> int:
+        return len(self.beats)
+
+    def __getitem__(self, idx: int):
+        beat = self.beats[idx]
+        label = self.labels[idx]
+        if torch is not None:
+            return torch.from_numpy(beat), torch.from_numpy(label)
+        return beat, label
+
+
 def create_dataloaders(
     data_dir: str,
     batch_size: int = 128,
-    num_workers: int = 2
+    num_workers: int = 2,
+    cache_path: Optional[str] = None
 ) -> Tuple:
     """
     Creates standard Inter-patient Train, Validation, and Test loaders.
     - Train: Folds 1 - 8
     - Validation: Fold 9
     - Test: Fold 10 (Strict Inter-patient protocol)
+
+    Automatically uses precomputed RAM cache if `cache_path` exists (or default data/cache/*.npz).
     """
     if torch is None or DataLoader is None:
         raise RuntimeError("PyTorch is required to create DataLoader instances.")
 
-    train_dataset = PTBXLDataset(data_dir, folds=list(range(1, 9)))
-    val_dataset = PTBXLDataset(data_dir, folds=[9])
-    test_dataset = PTBXLDataset(data_dir, folds=[10])
+    # Auto-detect default cache file next to data_dir if not explicitly overridden
+    if cache_path is None:
+        default_cache = os.path.join(os.path.dirname(os.path.abspath(data_dir)), "cache", "ptbxl_preprocessed_250hz.npz")
+        if os.path.exists(default_cache):
+            cache_path = default_cache
+
+    use_pin_memory = torch.cuda.is_available()
+
+    if cache_path is not None and os.path.exists(cache_path):
+        print(f"⚡ Loading preprocessed RAM cache from: {cache_path}")
+        train_dataset = CachedPTBXLDataset(cache_path, folds=list(range(1, 9)))
+        val_dataset = CachedPTBXLDataset(cache_path, folds=[9])
+        test_dataset = CachedPTBXLDataset(cache_path, folds=[10])
+        effective_workers = 0  # Zero worker overhead since data is already contiguous in RAM
+    else:
+        train_dataset = PTBXLDataset(data_dir, folds=list(range(1, 9)))
+        val_dataset = PTBXLDataset(data_dir, folds=[9])
+        test_dataset = PTBXLDataset(data_dir, folds=[10])
+        effective_workers = num_workers
 
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True
+        num_workers=effective_workers,
+        pin_memory=use_pin_memory
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True
+        num_workers=effective_workers,
+        pin_memory=use_pin_memory
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True
+        num_workers=effective_workers,
+        pin_memory=use_pin_memory
     )
 
     return train_loader, val_loader, test_loader
