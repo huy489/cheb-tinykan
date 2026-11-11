@@ -249,9 +249,6 @@ def test_pytorch_end_to_end_backward():
         print("⚠️ SKIPPED (PyTorch not available in current interpreter)")
         return
 
-    model = ChebTinyKAN(in_channels=12, num_classes=5, degree=4)
-    criterion = MultiLabelFocalLoss(alpha=0.25, gamma=2.0)
-
     x = torch.randn(4, 12, 180)
     y = torch.tensor([
         [1.0, 0.0, 0.0, 0.0, 0.0],
@@ -260,17 +257,25 @@ def test_pytorch_end_to_end_backward():
         [0.0, 0.0, 0.0, 1.0, 0.0],
     ], dtype=torch.float32)
 
-    logits = model(x)
-    assert logits.shape == (4, 5), f"Unexpected logit shape: {logits.shape}"
-    loss = criterion(logits, y) + 1e-4 * model.l1_regularization_loss()
-    loss.backward()
+    for arch_name in ("baseline", "temporal_zones"):
+        model = ChebTinyKAN(in_channels=12, num_classes=5, degree=4, arch=arch_name)
+        criterion = MultiLabelFocalLoss(alpha=[0.53, 0.71, 0.70, 0.81, 0.73], gamma=2.0)
 
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            assert param.grad is not None, f"Missing gradient on {name}"
-            assert torch.isfinite(param.grad).all(), f"Non-finite gradient on {name}"
+        logits = model(x)
+        assert logits.shape == (4, 5), f"Unexpected logit shape ({arch_name}): {logits.shape}"
+        loss = criterion(logits, y) + 5e-3 * model.l1_regularization_loss()
+        loss.backward()
 
-    print("✅ PASSED! (Autograd clean, finite gradients verified)")
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                assert param.grad is not None, f"Missing gradient on {arch_name}.{name}"
+                assert torch.isfinite(param.grad).all(), f"Non-finite gradient on {arch_name}.{name}"
+
+        pruned = model.bottleneck_kan.prune_by_sparsity(0.70)
+        assert pruned >= 1075, f"Expected >=70% pruned edges, got {pruned}"
+        assert model.count_parameters()["within_budget"], f"Exceeded <12K active budget for {arch_name}"
+
+    print("✅ PASSED! (Both baseline & temporal_zones clean, <12K pruned)")
 
 
 if __name__ == "__main__":

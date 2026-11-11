@@ -100,6 +100,44 @@ if nn is not None:
             return z
 
 
+    class TemporalZoneConv1DTokenizer(nn.Module):
+        """
+        Phase-Preserving Temporal Tokenizer splitting the beat into 4 physiological segments:
+        [P/PR interval (-200..-20ms), Q/QRS (-20..+160ms), J/ST-segment (+160..+340ms), Late-T (+340..+520ms)].
+        Compresses 48 feature channels -> 16 channels x 4 phases = 64 tokens, preserving temporal morphology
+        without increasing downstream KAN parameters.
+        """
+        def __init__(self, in_channels: int = 12):
+            super().__init__()
+            # Stage 1: Standard Conv1D (k=7, s=2, c=24) -> (B, 24, 90) | 2,064 params
+            self.stage1 = nn.Sequential(
+                nn.Conv1d(in_channels, 24, kernel_size=7, stride=2, padding=3, bias=False),
+                nn.BatchNorm1d(24),
+                nn.ReLU(inplace=False)
+            )
+            # Stage 2: Depthwise Separable Conv1D (k=5, s=2, c=48) -> (B, 48, 45) | 1,368 params
+            self.stage2 = DepthwiseSeparableConv1d(24, 48, kernel_size=5, stride=2)
+
+            # Stage 3: Depthwise Separable Conv1D (k=5, s=2, c=48) -> (B, 48, 23) | 2,640 params
+            self.stage3 = DepthwiseSeparableConv1d(48, 48, kernel_size=5, stride=2)
+
+            # Stage 4: Pointwise temporal projection 48 -> 16 (800 params) + 4-Zone Adaptive Pooling -> (B, 64)
+            self.proj = nn.Sequential(
+                nn.Conv1d(48, 16, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.BatchNorm1d(16),
+                nn.ReLU(inplace=False)
+            )
+            self.zone_pool = nn.AdaptiveAvgPool1d(4)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = self.stage1(x)
+            x = self.stage2(x)
+            x = self.stage3(x)
+            x = self.proj(x)        # (B, 16, 23)
+            x = self.zone_pool(x)   # (B, 16, 4)
+            return x.flatten(1)     # (B, 64)
+
+
     class ChebTinyKAN(nn.Module):
         """
         Complete Cheb-TinyKAN Architecture for Multi-Label Myocardial Infarction Localization.
@@ -110,13 +148,25 @@ if nn is not None:
             3: Lateral Myocardial Infarction (LMI - LCx territory: I, aVL, V5, V6)
             4: Septal Myocardial Infarction (SMI - LAD Septal branch: V1-V2)
         """
-        def __init__(self, in_channels: int = 12, num_classes: int = 5, degree: int = 4):
+        def __init__(
+            self,
+            in_channels: int = 12,
+            num_classes: int = 5,
+            degree: int = 4,
+            arch: str = "baseline"
+        ):
             super().__init__()
             self.num_classes = num_classes
             self.degree = degree
+            self.arch = arch
 
             # Stage 1: 1D-CNN Tokenizer (12 leads -> 64 feature tokens)
-            self.tokenizer = Conv1DTokenizer(in_channels=in_channels)
+            if arch == "temporal_zones":
+                self.tokenizer = TemporalZoneConv1DTokenizer(in_channels=in_channels)
+            elif arch == "baseline":
+                self.tokenizer = Conv1DTokenizer(in_channels=in_channels)
+            else:
+                raise ValueError(f"Unknown arch '{arch}'. Expected 'baseline' or 'temporal_zones'.")
 
             # Stage 2: Cheb-KAN Bottleneck Layer (64 -> 24)
             self.bottleneck_kan = ChebyshevKANLayer(
@@ -171,22 +221,29 @@ if nn is not None:
         def count_parameters(self) -> dict:
             """
             Calculates parameter breakdown per module to verify TinyML budget.
+            Reports both unpruned and active (post-pruning) parameters.
             """
             tokenizer_params = sum(p.numel() for p in self.tokenizer.parameters() if p.requires_grad)
             bottleneck_params = sum(p.numel() for p in self.bottleneck_kan.parameters() if p.requires_grad)
             decision_params = sum(p.numel() for p in self.decision_kan.parameters() if p.requires_grad)
             total = tokenizer_params + bottleneck_params + decision_params
 
+            active_bottleneck = self.bottleneck_kan.active_parameter_count()
+            active_decision = self.decision_kan.active_parameter_count()
+            active_total = tokenizer_params + active_bottleneck + active_decision
+
             return {
                 "tokenizer_params": tokenizer_params,
                 "bottleneck_kan_params": bottleneck_params,
                 "decision_kan_params": decision_params,
                 "total_params": total,
+                "active_total_params": active_total,
                 "budget_limit": 12000,
-                "within_budget": total <= 20000
+                "within_budget": active_total <= 12000
             }
 else:
     DepthwiseSeparableConv1d = None
     Conv1DTokenizer = None
+    TemporalZoneConv1DTokenizer = None
     ChebTinyKAN = None
 

@@ -152,6 +152,64 @@ typedef struct {
     const int16_t *cheb2_b;         /* [5] */
 } ChebTinyKANModelWeights;
 
+/**
+ * @brief Calibrated Fixed-Point Q-format weights container with BatchNorm folding & per-layer shift calibration.
+ *        Supports arch_mode = 0 (baseline GAP) and arch_mode = 1 (temporal_zones 4-phase pooling).
+ */
+typedef struct {
+    uint8_t arch_mode;              /* 0 = baseline GAP(1), 1 = temporal_zones(4 phases) */
+
+    /* Conv1: 12 -> 24 (k=7, s=2, p=3) */
+    const int16_t *conv1_w;
+    const int32_t *conv1_b;
+    uint8_t conv1_w_frac;
+    uint8_t conv1_out_frac;
+
+    /* DS1 Depthwise: 24 (k=5, s=2, p=2) */
+    const int16_t *ds1_dw_w;
+    uint8_t ds1_dw_w_frac;
+    uint8_t ds1_dw_out_frac;
+
+    /* DS1 Pointwise (+ folded BN): 24 -> 48 */
+    const int16_t *ds1_pw_w;
+    const int32_t *ds1_pw_b;
+    uint8_t ds1_pw_w_frac;
+    uint8_t ds1_pw_out_frac;
+
+    /* DS2 Depthwise: 48 (k=5, s=2, p=2) */
+    const int16_t *ds2_dw_w;
+    uint8_t ds2_dw_w_frac;
+    uint8_t ds2_dw_out_frac;
+
+    /* DS2 Pointwise (+ folded BN): 48 -> ch3_out (64 baseline / 48 temporal_zones) */
+    const int16_t *ds2_pw_w;
+    const int32_t *ds2_pw_b;
+    uint8_t ds2_pw_w_frac;
+    uint8_t ds2_pw_out_frac;
+
+    /* Optional Stage 4 Pointwise Proj (+ folded BN): 48 -> 16 (only used if arch_mode == 1) */
+    const int16_t *proj_w;
+    const int32_t *proj_b;
+    uint8_t proj_w_frac;
+    uint8_t proj_out_frac;
+
+    /* Cheb-KAN Layer 1 (Bottleneck: 64 -> 24) */
+    const int16_t *cheb1_base_w;
+    const int16_t *cheb1_coeffs;
+    const int32_t *cheb1_b;
+    const uint8_t *cheb1_edge_mask;
+    uint8_t cheb1_w_frac;
+    uint8_t cheb1_out_frac;
+
+    /* Cheb-KAN Layer 2 (Decision: 24 -> 5) */
+    const int16_t *cheb2_base_w;
+    const int16_t *cheb2_coeffs;
+    const int32_t *cheb2_b;
+    const uint8_t *cheb2_edge_mask;
+    uint8_t cheb2_w_frac;
+    uint8_t cheb2_out_frac;
+} ChebCalibratedModelWeights;
+
 /* ========================================================================= */
 /* FUNCTION PROTOTYPES                                                       */
 /* ========================================================================= */
@@ -170,9 +228,19 @@ void cheb_recurrence_q15(int16_t x_q15, int16_t t_out[5]);
 int16_t cheb_fast_tanh_q15(int16_t x_q15);
 
 /**
+ * @brief Exact linearly-interpolated Tanh LUT (output Q1.15) for any Q-format input on [-4.0, +4.0].
+ */
+int16_t cheb_tanh_lut_q15(int16_t x, uint8_t in_frac);
+
+/**
  * @brief Fast fixed-point Q1.15 Sigmoid approximation.
  */
 int16_t cheb_fast_sigmoid_q15(int16_t x_q15);
+
+/**
+ * @brief Exact Sigmoid LUT (output Q1.15) for arbitrary Q-format logit on [-8.0, +8.0].
+ */
+int16_t cheb_sigmoid_lut_q15(int16_t x, uint8_t in_frac);
 
 /**
  * @brief Verifies signal quality and checks for lead detachment / rail saturation.
@@ -184,10 +252,6 @@ int cheb_verify_sqi_q15(const int16_t *ecg_12x180);
 /**
  * @brief Executes end-to-end inference of Cheb-TinyKAN in pure Q1.15 fixed-point.
  *        Guaranteed Peak SRAM < 6.0 KB using static ping-pong buffers.
- * @param ecg_12x180 Input 12-lead ECG beat (12 channels x 180 points)
- * @param weights Pointer to quantized weights structure
- * @param result Pointer to receive output diagnostic probabilities
- * @return CHEB_STATUS_OK on success, negative error code otherwise.
  */
 int cheb_tinykan_infer_q15(
     const int16_t *ecg_12x180,
@@ -196,11 +260,14 @@ int cheb_tinykan_infer_q15(
 );
 
 /**
- * @brief Floating-point reference inference for bit-exactness verification (<1.5% error per AC-07).
+ * @brief Executes calibrated Q-format inference matching real trained PyTorch checkpoints
+ *        with BatchNorm folding and bit-exactness verification (<1.5% error per AC-08).
+ * @param skip_sqi Set true when input beat is already preprocessed & verified by EndToEndECGPreprocessor.
  */
-int cheb_tinykan_infer_f32_reference(
-    const float *ecg_12x180,
-    const ChebTinyKANModelWeights *weights,
+int cheb_tinykan_infer_calibrated(
+    const int16_t *ecg_12x180,
+    const ChebCalibratedModelWeights *weights,
+    bool skip_sqi,
     ChebInferenceResult *result
 );
 

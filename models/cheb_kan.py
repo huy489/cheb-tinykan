@@ -98,6 +98,9 @@ if nn is not None:
             else:
                 self.register_parameter('bias', None)
 
+            # Binary edge mask (1.0 = active edge, 0.0 = pruned edge) to lock sparsity during fine-tuning
+            self.register_buffer("edge_mask", torch.ones(out_features, in_features, dtype=torch.float32))
+
             self.reset_parameters()
 
         def reset_parameters(self):
@@ -122,15 +125,19 @@ if nn is not None:
             Returns:
                 out: Tensor of shape (batch, out_features)
             """
+            # Enforce exact zero contribution from pruned edges
+            masked_base = self.base_weight * self.edge_mask
+            masked_coeffs = self.cheb_coeffs * self.edge_mask.unsqueeze(-1)
+
             # 1. Base activation term: w_base * tanh(x)
-            base_out = F.linear(torch.tanh(x), self.base_weight)
+            base_out = F.linear(torch.tanh(x), masked_base)
 
             # 2. Chebyshev polynomial recurrence term: sum(c_k * T_k(x))
             # x is clamped to [-1.0, 1.0] inside ChebyshevPolynomial.forward_torch
             T = ChebyshevPolynomial.forward_torch(x, degree=self.degree)  # (B, in_feat, degree + 1)
 
             # Compute tensor contraction: (B, in_feat, deg+1) x (out_feat, in_feat, deg+1) -> (B, out_feat)
-            cheb_out = torch.einsum('bid,oid->bo', T, self.cheb_coeffs)
+            cheb_out = torch.einsum('bid,oid->bo', T, masked_coeffs)
 
             # 3. Aggregate
             out = base_out + cheb_out
@@ -140,23 +147,57 @@ if nn is not None:
 
         def l1_regularization(self) -> torch.Tensor:
             """
-            Calculates L1 penalty on Chebyshev polynomial coefficients to enforce edge sparsity.
-            Prunes weak connections (aiming for >= 70% pruned edges in Cheb-KAN layer 1).
+            Calculates Group-Lasso L2-edge penalty across both base weights and Chebyshev
+            polynomial coefficients to enforce structured edge sparsity (>= 70% pruned edges).
             """
-            return torch.mean(torch.abs(self.cheb_coeffs))
+            edge_l2 = torch.sqrt(
+                torch.sum(self.cheb_coeffs ** 2, dim=-1) + (self.base_weight ** 2) + 1e-8
+            )
+            active_count = torch.clamp(self.edge_mask.sum(), min=1.0)
+            return torch.sum(edge_l2 * self.edge_mask) / active_count
 
         def prune_edges(self, threshold: float = 1e-3) -> int:
             """
-            Hard-prunes edges whose L2 coefficient energy is below threshold.
-            Sets their weights and coefficients to exactly 0.0.
+            Hard-prunes edges whose energy is below threshold (or already masked).
+            Sets their weights, coefficients, and edge_mask to 0.0.
+            Returns total number of pruned edges.
+            """
+            with torch.no_grad():
+                edge_norm = torch.norm(self.cheb_coeffs, dim=-1) + torch.abs(self.base_weight)
+                prune_mask = (edge_norm < threshold) | (self.edge_mask < 0.5)
+                self.edge_mask[prune_mask] = 0.0
+                self.cheb_coeffs[prune_mask] = 0.0
+                self.base_weight[prune_mask] = 0.0
+                return int(prune_mask.sum().item())
+
+        def prune_by_sparsity(self, target_sparsity: float = 0.70) -> int:
+            """
+            Prunes the weakest `target_sparsity` fraction of edges by Group-L2+L1 magnitude
+            and locks their mask to 0.0 for subsequent sparse fine-tuning.
             Returns number of pruned edges.
             """
             with torch.no_grad():
-                edge_norm = torch.norm(self.cheb_coeffs, dim=-1)  # (out_feat, in_feat)
-                mask = edge_norm < threshold
-                self.cheb_coeffs[mask] = 0.0
-                self.base_weight[mask] = 0.0
-                return int(mask.sum().item())
+                edge_energy = torch.norm(self.cheb_coeffs, dim=-1) + torch.abs(self.base_weight)
+                flat_energy = edge_energy.flatten()
+                k_prune = int(round(target_sparsity * flat_energy.numel()))
+                if k_prune <= 0:
+                    return 0
+                if k_prune >= flat_energy.numel():
+                    k_prune = flat_energy.numel() - 1
+                threshold = torch.kthvalue(flat_energy, k_prune).values
+                prune_mask = edge_energy <= threshold
+                self.edge_mask.fill_(1.0)
+                self.edge_mask[prune_mask] = 0.0
+                self.cheb_coeffs[prune_mask] = 0.0
+                self.base_weight[prune_mask] = 0.0
+                return int(prune_mask.sum().item())
+
+        def active_parameter_count(self) -> int:
+            """Returns actual non-zero active parameters after edge pruning."""
+            active_edges = int((self.edge_mask > 0.5).sum().item())
+            per_edge_params = 1 + (self.degree + 1)
+            bias_params = self.out_features if self.bias is not None else 0
+            return active_edges * per_edge_params + bias_params
 
         def export_symbolic_polynomials(self):
             """

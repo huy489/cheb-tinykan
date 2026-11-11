@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-checkpoints/*.pth
+*.pth
 data/ptb-xl/
 data/ptb-xl
 data/cache/

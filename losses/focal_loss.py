@@ -24,11 +24,18 @@ if nn is not None:
         Binary Focal Loss applied independently across multi-label output heads.
         Numerically stable formulation using BCEWithLogits.
         """
-        def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = 'mean'):
+        def __init__(self, alpha=0.25, gamma: float = 2.0, reduction: str = 'mean'):
             super().__init__()
-            self.alpha = alpha
             self.gamma = gamma
             self.reduction = reduction
+            if alpha is None:
+                self.register_buffer("alpha", None)
+            elif isinstance(alpha, (list, tuple)):
+                self.register_buffer("alpha", torch.tensor(alpha, dtype=torch.float32))
+            elif torch.is_tensor(alpha):
+                self.register_buffer("alpha", alpha.float())
+            else:
+                self.register_buffer("alpha", torch.tensor(float(alpha), dtype=torch.float32))
 
         def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
             """
@@ -50,7 +57,7 @@ if nn is not None:
             # Focal modulating factor: (1 - p_t)^gamma
             focal_weight = (1.0 - p_t) ** self.gamma
 
-            # Alpha balancing factor
+            # Alpha balancing factor (supports scalar or per-class tensor of shape [num_classes])
             if self.alpha is not None:
                 alpha_t = targets * self.alpha + (1.0 - targets) * (1.0 - self.alpha)
                 focal_loss = alpha_t * focal_weight * bce_loss

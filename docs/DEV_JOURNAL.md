@@ -176,6 +176,15 @@ python3 test_local.py
   3. **Huấn luyện tại Local qua môi trường `.venv` cô lập:** Cài Python 3.12 + PyTorch CPU bằng `uv` (không chạm Python 3.14 hệ thống). Với 16.837 tham số đọc từ RAM Cache, **tốc độ train trên CPU Intel i5-8365U đạt ~3 giây/epoch** ($\approx 3\text{ phút}$ cho trọn vẹn 60 epochs — nhanh hơn **~90 lần** so với Colab trước đây mà **0 tốn Compute Units**!).
   4. **Ghi nhận Liêm chính Khoa học:** Toàn bộ vết chỉnh sửa, lý do và kết quả từng phiên được lưu tại [`docs/SCIENTIFIC_INTEGRITY_LOG.md`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/SCIENTIFIC_INTEGRITY_LOG.md).
 
+### 4.5. Nâng Cấp Toàn Diện Cho Đối Chứng Có Kiểm Soát (Run #2 & Run #3) Và Kiểm Định Nhúng Thực Tế
+- **Cân bằng mất cân bằng lớp (`losses/focal_loss.py` + `--auto_alpha`):** Bổ sung hỗ trợ vector trọng số $\alpha_c = \frac{\sqrt{N_{neg}/N_{pos}}}{1 + \sqrt{N_{neg}/N_{pos}}}$ tính độc quyền từ tập Train Folds 1–8 để khắc phục tình trạng lớp hiếm (`LMI` 5,45%) bị ép xác suất dưới ngưỡng 0,50.
+- **Tỉa cạnh có cấu trúc Group-L1 + Sparse Fine-tuning (`models/cheb_kan.py`):** Bổ sung `edge_mask` khóa vĩnh viễn $70\%$ cạnh yếu bị tỉa (`prune_by_sparsity`) ở Epoch 40, ép tổng tham số hoạt động xuống **`10.387`** (`< 12.000` per `AC-03`) rồi tiếp tục fine-tune 20 epoch cuối.
+- **Kiến trúc `TemporalZoneConv1DTokenizer` (`models/model.py`):** Hỗ trợ tùy chọn `--arch temporal_zones` phân tách 4 phân vùng sinh lý P/PR, Q/QRS, J/ST, Late-T (`AdaptiveAvgPool1d(4)`) giữ nguyên đúng ngân sách tham số (`16.837` raw / `10.387` active).
+- **Hiệu chỉnh Firmware C99 Bit-Exact (`firmware/cheb_tinykan_cmsis.c/h`):**
+  - Khắc phục kích thước chiều dài thực tế ở Stage 3 (`23` thay vì `22` để khớp tuyệt đối công thức `padding=2` của PyTorch).
+  - Bổ sung `cheb_tinykan_infer_calibrated` hỗ trợ gập BatchNorm (`fold_conv_bn`), dịch bit theo tầng $Q$-format, và bảng tra LUT `tanh` 257 điểm nội suy tuyến tính trên $[-4, +4]$ cho phép `cheb_sigmoid_lut_q15` đạt độ chính xác cực cao.
+- **Script Kiểm định Hậu Huấn luyện (`scripts/evaluate_clinical_and_edge.py`):** Đánh giá tự động `AC-06/07` (trích xuất phương trình đại số & báo động lâm sàng), `AC-08` (đối sánh trực tiếp nhị phân C99 vs PyTorch trên 500 nhịp Fold 10), và `AC-09` (nghiên cứu cắt bỏ EASI Dower trên toàn bộ 2.198 ca Fold 10).
+
 ---
 
 ## 5. HƯỚNG DẪN THỰC THI HYBRID (LOCAL-FIRST & COLAB GPU KHI CẦN)
