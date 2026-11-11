@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-11-11T20:24:25+0700",
+  "dsp_time_seconds": 38.84,
+  "total_time_seconds": 71.3,
+  "cache_file": "data/cache/ptbxl_multibeat_250hz.npz",
+  "cache_size_mb": 616.7,
+  "tensor_shape": [
+    21799,
+    8,
+    12,
+    180
+  ],
+  "dtype": "int16_q15",
+  "max_beats_per_record": 8,
+  "mean_valid_beats_per_record": 7.98,
+  "edge03_tachycardia_gt150bpm_records": 114,
+  "sha256_beats_int16": "127a1728a33849d7e5c4857d44c0d3ed2b7bdbbc873967c058e840f13b16c313",
+  "sha256_labels": "1f8f738aeb387f9f4decf43737352bab207d2caf27c67b1353b61621414e934d",
+  "zero_patient_leakage_verified": true,
+  "total_extracted_beats": 173414,
+  "class_names": [
+    "NORM",
+    "AMI",
+    "IMI",
+    "LMI",
+    "SMI"
+  ]
+}

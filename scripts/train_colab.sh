@@ -34,15 +34,30 @@ if [ ! -f /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz ]; then
         --audit /content/cheb-tinykan/docs/cache_audit.json
 fi
 
-echo "🔥 [5/5] Starting 60-Epoch Cheb-TinyKAN Training on GPU (T4) using RAM Cache..."
-python train.py \
-    --data_dir /content/cheb-tinykan/data/ptb-xl \
-    --cache_path /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz \
-    --epochs 60 \
-    --batch_size 128 \
-    --lr 1e-3 \
-    --device cuda \
-    --resume \
-    --save_dir /content/cheb-tinykan/checkpoints
+echo "🔥 [5/5] Running GPU Tasks (Heavy Baselines or Cheb-TinyKAN) on Colab T4 using RAM Cache..."
+RUN_MODE="${1:-baselines}"
 
-echo "🎉 [COMPLETE] Training and Evaluation Finished Successfully!"
+if [ "$RUN_MODE" = "baselines" ] || [ "$RUN_MODE" = "all" ]; then
+    echo "📊 Training Heavy IEEE Baselines (ResNet1D & InceptionTime) on CUDA T4..."
+    python scripts/train_baselines.py --model resnet1d \
+        --data_dir /content/cheb-tinykan/data/ptb-xl \
+        --cache_path /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz \
+        --epochs 40 --batch_size 128 --lr 1e-3 --device cuda
+
+    python scripts/train_baselines.py --model inception_time \
+        --data_dir /content/cheb-tinykan/data/ptb-xl \
+        --cache_path /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz \
+        --epochs 40 --batch_size 128 --lr 1e-3 --device cuda
+fi
+
+if [ "$RUN_MODE" = "tinykan" ] || [ "$RUN_MODE" = "all" ]; then
+    echo "⚡ Running Cheb-TinyKAN Run #2 Config on CUDA..."
+    python train.py \
+        --data_dir /content/cheb-tinykan/data/ptb-xl \
+        --cache_path /content/cheb-tinykan/data/cache/ptbxl_preprocessed_250hz.npz \
+        --arch baseline --epochs 60 --batch_size 128 --lr 1e-3 \
+        --auto_alpha --l1_lambda 5e-3 --prune_epoch 40 --target_sparsity 0.70 \
+        --device cuda --resume --save_dir /content/cheb-tinykan/checkpoints/run2_colab
+fi
+
+echo "🎉 [COMPLETE] Colab GPU Execution Finished Successfully!"

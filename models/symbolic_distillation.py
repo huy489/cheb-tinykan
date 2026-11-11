@@ -149,3 +149,40 @@ class SymbolicMorphometricDistiller:
 
         lines.append("=" * 60)
         return "\n".join(lines)
+
+    @staticmethod
+    def classify_clinical_state(probabilities, thresholds=None) -> dict:
+        """
+        Implements PRD-01 EDGE-05 borderline monitoring band:
+        - MI prob > 0.65 (and above optional class threshold) -> CRITICAL_MI_ALERT
+        - 0.45 <= MI prob <= 0.65 -> SUSPECTED_ISCHEMIA_MONITOR_TREND (15-min dynamic monitoring)
+        - Otherwise -> NORMAL_SINUS_MONITORING
+        Args:
+            probabilities: sequence of length 5 corresponding to [NORM, AMI, IMI, LMI, SMI]
+        """
+        names = ["NORM", "AMI", "IMI", "LMI", "SMI"]
+        probs = [float(p) for p in probabilities]
+        mi_pairs = [(names[i], probs[i]) for i in range(1, 5)]
+        top_mi_name, top_mi_prob = max(mi_pairs, key=lambda kv: kv[1])
+
+        if thresholds is not None and len(thresholds) == 5:
+            high_cut = max(0.65, float(thresholds[names.index(top_mi_name)]))
+        else:
+            high_cut = 0.65
+
+        if top_mi_prob > high_cut:
+            state = "CRITICAL_MI_ALERT"
+            action = "Immediate Cath-Lab triage & symbolic ST inspection"
+        elif any(0.45 <= p <= 0.65 for _, p in mi_pairs):
+            state = "SUSPECTED_ISCHEMIA_MONITOR_TREND"
+            action = "Monitor ST-segment dynamics for next 15 minutes (EDGE-05)"
+        else:
+            state = "NORMAL_SINUS_MONITORING"
+            action = "Routine wearable telemetry"
+
+        return {
+            "clinical_state": state,
+            "top_mi_territory": top_mi_name,
+            "top_mi_prob": top_mi_prob,
+            "recommended_action": action,
+        }

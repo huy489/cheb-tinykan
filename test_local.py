@@ -230,13 +230,18 @@ def test_clinical_symbolic_reporting():
 
 
 def test_c99_firmware_binary():
-    print("Testing C99 Firmware Binary Compilation & Execution (AC-04/05/07)... ", end=" ")
+    print("Testing C99 Firmware Binary Compilation & Execution (AC-04/05/08/EDGE)... ", end=" ")
     import subprocess
-    cmd = "gcc -O3 -Wall -Wextra -std=c99 firmware/test_firmware.c firmware/cheb_tinykan_cmsis.c -lm -o firmware/test_firmware && ./firmware/test_firmware"
+    cmd = (
+        "gcc -O3 -Wall -Wextra -Werror -std=c99 firmware/test_firmware.c firmware/cheb_tinykan_cmsis.c -lm -o firmware/test_firmware "
+        "&& ./firmware/test_firmware "
+        "&& gcc -O2 -Wall -Wextra -Werror -std=c99 -Ifirmware -c firmware/targets/esp32s3/main_esp32s3.c -o /tmp/esp32s3_check.o "
+        "&& rm -f /tmp/esp32s3_check.o"
+    )
     res = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=os.path.dirname(__file__))
     assert res.returncode == 0, f"Firmware test execution failed:\n{res.stderr}"
-    assert "ALL 5 FIRMWARE VERIFICATION SUITES PASSED" in res.stdout, "Firmware suite did not complete"
-    print("✅ PASSED! (All C99 CMSIS-NN tests passed cleanly)")
+    assert "ALL 6 FIRMWARE VERIFICATION SUITES PASSED" in res.stdout, "Firmware suite did not complete"
+    print("✅ PASSED! (All 6 C99 CMSIS-NN, EDGE & ESP32-S3 build tests passed cleanly)")
 
 
 def test_pytorch_end_to_end_backward():
@@ -278,6 +283,46 @@ def test_pytorch_end_to_end_backward():
     print("✅ PASSED! (Both baseline & temporal_zones clean, <12K pruned)")
 
 
+def test_multibeat_edge03_edge05_and_baselines():
+    print("Testing Multi-Beat Slicer (EDGE-03), EDGE-05 Triage & IEEE Baselines... ", end=" ")
+    from data.dsp_preprocessing import AdaptiveRPeakBeatSlicer
+    from models.symbolic_distillation import SymbolicMorphometricDistiller
+
+    # 1. EDGE-03: 180 bpm synthetic QRS spikes (every 0.333s -> ~83 samples @ 250Hz)
+    slicer = AdaptiveRPeakBeatSlicer(window_size=180, fs=250.0)
+    ecg_tachy = np.ones((2500, 12), dtype=np.float32) * 0.2
+    for peak in range(80, 2400, 83):
+        ecg_tachy[peak - 2:peak + 3, :] = 1.5
+    beats, n_valid, hr_bpm = slicer.extract_multibeat_windows(ecg_tachy, max_beats=8)
+    assert beats.shape == (8, 12, 180), f"Invalid shape {beats.shape}"
+    assert n_valid >= 4, f"Expected multiple R-peaks, got {n_valid}"
+    assert hr_bpm > 150.0, f"Expected tachycardia HR>150, got {hr_bpm}"
+    # Tail sample 179 should be attenuated to 0 by Tukey cosine taper while baseline region <135 remains intact
+    assert np.max(np.abs(beats[0, :, 179])) < 1e-4, "EDGE-03 Tukey right-tail did not taper!"
+
+    # 2. EDGE-05 borderline ischemia trend band (0.45..0.65)
+    res_trend = SymbolicMorphometricDistiller.classify_clinical_state([0.40, 0.56, 0.12, 0.08, 0.25])
+    assert res_trend["clinical_state"] == "SUSPECTED_ISCHEMIA_MONITOR_TREND", res_trend
+    res_crit = SymbolicMorphometricDistiller.classify_clinical_state([0.15, 0.78, 0.10, 0.05, 0.22])
+    assert res_crit["clinical_state"] == "CRITICAL_MI_ALERT", res_crit
+
+    # 3. IEEE Baseline models sanity check
+    try:
+        import torch
+        from models.baselines import build_baseline
+        x = torch.randn(2, 12, 180)
+        for bname in ("mlp_tiny", "resnet1d", "inception_time"):
+            bm = build_baseline(bname)
+            bm.eval()
+            with torch.no_grad():
+                out = bm(x)
+            assert out.shape == (2, 5), f"Invalid baseline output {bname}: {out.shape}"
+    except ImportError:
+        pass
+
+    print("✅ PASSED!")
+
+
 if __name__ == "__main__":
     print("=" * 65)
     print("🧪 RUNNING CHEB-TINYKAN EXPANDED SYSTEM VERIFICATION TEST SUITE")
@@ -292,6 +337,7 @@ if __name__ == "__main__":
     test_clinical_symbolic_reporting()
     test_c99_firmware_binary()
     test_pytorch_end_to_end_backward()
+    test_multibeat_edge03_edge05_and_baselines()
     print("=" * 65)
-    print("🎉 ALL SYSTEM TEST SUITES PASSED! Phase 1, 2, 3, 4 Verified 100%.")
+    print("🎉 ALL 11 SYSTEM TEST SUITES PASSED! Phase 1, 2, 3, 4 + Multi-Beat Verified.")
     print("=" * 65)

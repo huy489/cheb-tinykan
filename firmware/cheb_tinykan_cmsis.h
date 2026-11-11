@@ -96,8 +96,17 @@ static inline float q15_to_float(int16_t q) {
 /* ========================================================================= */
 
 #if defined(__ARM_FEATURE_DSP) || defined(__ARM_ARCH_7EM__)
-    #include <arm_math.h>
-    #define CMSIS_SMLAD(val1, val2, acc) __SMLAD((val1), (val2), (acc))
+    #if defined(__has_include) && __has_include(<arm_math.h>)
+        #include <arm_math.h>
+        #define CMSIS_SMLAD(val1, val2, acc) __SMLAD((val1), (val2), (acc))
+    #else
+        /* Genuine ARMv7E-M hardware SMLAD intrinsic when standalone without CMSIS pack */
+        static inline int32_t CMSIS_SMLAD(uint32_t val1, uint32_t val2, int32_t acc) {
+            int32_t res;
+            __asm__ volatile ("smlad %0, %1, %2, %3" : "=r"(res) : "r"(val1), "r"(val2), "r"(acc));
+            return res;
+        }
+    #endif
 #else
     /* Portable generic fallback for non-ARM or simulation */
     static inline int32_t CMSIS_SMLAD(uint32_t val1, uint32_t val2, int32_t acc) {
@@ -112,6 +121,15 @@ static inline float q15_to_float(int16_t q) {
 /* ========================================================================= */
 /* FIRMWARE DATA STRUCTURES                                                  */
 /* ========================================================================= */
+
+/**
+ * @brief EDGE-05 Clinical Triage States (Borderline 45%-65% monitoring trend).
+ */
+typedef enum {
+    CHEB_STATE_NORMAL_MONITORING = 0,
+    CHEB_STATE_SUSPECTED_ISCHEMIA_MONITOR_TREND = 1,
+    CHEB_STATE_CRITICAL_MI_ALERT = 2
+} ChebClinicalState;
 
 /**
  * @brief Clinical inference result structure.
@@ -269,6 +287,20 @@ int cheb_tinykan_infer_calibrated(
     const ChebCalibratedModelWeights *weights,
     bool skip_sqi,
     ChebInferenceResult *result
+);
+
+/**
+ * @brief EDGE-05 clinical triage classifier for borderline 45%-65% monitoring trend.
+ */
+ChebClinicalState cheb_classify_clinical_state(const ChebInferenceResult *result);
+
+/**
+ * @brief Aggregates multi-beat inference results (e.g., rolling 10s record consensus).
+ */
+int cheb_multibeat_aggregate(
+    const ChebInferenceResult *beat_results,
+    int n_beats,
+    ChebInferenceResult *out_consensus
 );
 
 #ifdef __cplusplus

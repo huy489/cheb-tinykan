@@ -23,7 +23,7 @@
 #define ANSI_RESET  "\033[0m"
 
 static void test_cheb_recurrence_accuracy(void) {
-    printf("[1/5] Testing Q1.15 Chebyshev Recurrence Bit-Exactness... ");
+    printf("[1/6] Testing Q1.15 Chebyshev Recurrence Bit-Exactness... ");
     float max_error = 0.0f;
 
     for (int i = -32768; i <= 32767; i += 256) {
@@ -59,7 +59,7 @@ static void test_cheb_recurrence_accuracy(void) {
 }
 
 static void test_sqi_fault_detection(void) {
-    printf("[2/5] Testing Signal Quality Index & Lead Fault Bẫy (EDGE-01)... ");
+    printf("[2/6] Testing Signal Quality Index & Lead Fault Trap (EDGE-01)... ");
 
     /* 1. Normal simulated ECG beat */
     int16_t normal_ecg[CHEB_ECG_NUM_LEADS * CHEB_ECG_SAMPLE_POINTS];
@@ -91,7 +91,7 @@ static void test_sqi_fault_detection(void) {
 }
 
 static void test_peak_sram_footprint(void) {
-    printf("[3/5] Auditing Peak SRAM Activation Footprint (AC-04)... ");
+    printf("[3/6] Auditing Peak SRAM Activation Footprint (AC-04)... ");
 
     /* The ping-pong buffers allocate 2160 int16 elements each */
     size_t buffer_bytes = 2160 * sizeof(int16_t);
@@ -103,7 +103,7 @@ static void test_peak_sram_footprint(void) {
 }
 
 static void test_inference_and_latency(void) {
-    printf("[4/5] Benchmarking Inference Speed & Zero-Leakage Stability... ");
+    printf("[4/6] Benchmarking Inference Speed & Zero-Leakage Stability... ");
 
     /* Construct dummy test weights for tokenizer and KAN */
     int16_t conv1_w[24 * 12 * 7] = {0};
@@ -188,7 +188,7 @@ static void test_inference_and_latency(void) {
 }
 
 static void test_output_probability_ranges(void) {
-    printf("[5/5] Testing Output Probabilities & Multi-Territory Head Logic... ");
+    printf("[5/6] Testing Output Probabilities & Multi-Territory Head Logic... ");
 
     int16_t dummy_buf[24 * 64 * 5] = {0};
     uint8_t dummy_mask[24 * 64];
@@ -231,6 +231,49 @@ static void test_output_probability_ranges(void) {
     printf(ANSI_GREEN "PASSED!" ANSI_RESET " (All 5 heads bounded in [0.0, 1.0])\n");
 }
 
+static void test_defensive_edge_cases_and_multibeat(void) {
+    printf("[6/6] Testing EDGE-02 Saturation, EDGE-05 Trend & Multi-Beat Consensus... ");
+
+    /* EDGE-02: Rail saturation (> 5% points at Q15 limit) */
+    int16_t sat_ecg[CHEB_ECG_NUM_LEADS * CHEB_ECG_SAMPLE_POINTS];
+    for (int i = 0; i < CHEB_ECG_NUM_LEADS * CHEB_ECG_SAMPLE_POINTS; i++) {
+        sat_ecg[i] = Q15_MAX;
+    }
+    if (cheb_verify_sqi_q15(sat_ecg) != CHEB_STATUS_SATURATION) {
+        printf(ANSI_RED "FAILED!" ANSI_RESET " (EDGE-02 rail saturation not trapped)\n");
+        exit(1);
+    }
+
+    /* EDGE-05: Borderline ischemia band 45%-65% triggers SUSPECTED_ISCHEMIA_MONITOR_TREND */
+    ChebInferenceResult borderline = {
+        .probabilities = {0.42f, 0.54f, 0.10f, 0.08f, 0.22f},
+        .is_mi_detected = true,
+        .primary_territory = CLASS_IDX_AMI,
+        .confidence = 0.54f,
+        .inference_cycles = 100
+    };
+    if (cheb_classify_clinical_state(&borderline) != CHEB_STATE_SUSPECTED_ISCHEMIA_MONITOR_TREND) {
+        printf(ANSI_RED "FAILED!" ANSI_RESET " (EDGE-05 borderline band mismatch)\n");
+        exit(1);
+    }
+
+    /* Multi-Beat rolling consensus across 3 beats */
+    ChebInferenceResult beats[3] = {
+        {.probabilities = {0.20f, 0.72f, 0.10f, 0.05f, 0.30f}, .inference_cycles = 100},
+        {.probabilities = {0.25f, 0.68f, 0.12f, 0.04f, 0.28f}, .inference_cycles = 110},
+        {.probabilities = {0.15f, 0.76f, 0.08f, 0.06f, 0.32f}, .inference_cycles = 105}
+    };
+    ChebInferenceResult consensus;
+    if (cheb_multibeat_aggregate(beats, 3, &consensus) != CHEB_STATUS_OK ||
+        fabsf(consensus.probabilities[CLASS_IDX_AMI] - 0.72f) > 1e-4f ||
+        cheb_classify_clinical_state(&consensus) != CHEB_STATE_CRITICAL_MI_ALERT) {
+        printf(ANSI_RED "FAILED!" ANSI_RESET " (Multi-beat aggregation mismatch)\n");
+        exit(1);
+    }
+
+    printf(ANSI_GREEN "PASSED!" ANSI_RESET " (EDGE-02/05 & 3-beat consensus verified)\n");
+}
+
 int main(void) {
     printf("=================================================================\n");
     printf("🚀 CHEB-TINYKAN C99 EMBEDDED FIRMWARE BENCHMARK & TEST HARNESS\n");
@@ -241,9 +284,10 @@ int main(void) {
     test_peak_sram_footprint();
     test_inference_and_latency();
     test_output_probability_ranges();
+    test_defensive_edge_cases_and_multibeat();
 
     printf("=================================================================\n");
-    printf(ANSI_GREEN "🎉 ALL 5 FIRMWARE VERIFICATION SUITES PASSED CLEANLY!\n" ANSI_RESET);
+    printf(ANSI_GREEN "🎉 ALL 6 FIRMWARE VERIFICATION SUITES PASSED CLEANLY!\n" ANSI_RESET);
     printf("=================================================================\n");
     return 0;
 }

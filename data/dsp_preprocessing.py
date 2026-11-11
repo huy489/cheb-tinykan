@@ -177,6 +177,107 @@ class AdaptiveRPeakBeatSlicer:
         # Transpose to shape (12, 180) -> (Channels, Time)
         return beat_norm.T.astype(np.float32), r_peak
 
+    def extract_multibeat_windows(
+        self,
+        ecg: np.ndarray,
+        max_beats: int = 8,
+        min_rr_sec: float = 0.30
+    ) -> Tuple[np.ndarray, int, float]:
+        """
+        Extracts up to `max_beats` clean R-peak centered windows from a continuous 12-lead ECG.
+        Implements EDGE-03: estimates heart rate and applies a right-tail Tukey cosine taper
+        when HR > 150 bpm so adjacent beat P/T waves do not contaminate the +360..+520ms tail
+        while keeping QRS and ST segment intact.
+        Returns:
+            beats: (max_beats, 12, 180) float32 in [-1.0, 1.0]
+            n_valid: int actual number of detected beats (padded by repeating valid beats if < max_beats)
+            hr_bpm: float estimated heart rate in bpm
+        """
+        n_samples = ecg.shape[0]
+        lead_ii = ecg[:, 1] if ecg.shape[1] > 1 else ecg[:, 0]
+        lead_v2 = ecg[:, 7] if ecg.shape[1] > 7 else lead_ii
+
+        # Composite QRS slope energy smoothed over ~60ms
+        d_ii = np.diff(lead_ii, prepend=lead_ii[0])
+        d_v2 = np.diff(lead_v2, prepend=lead_v2[0])
+        energy = (d_ii ** 2) + 0.5 * (d_v2 ** 2)
+        if uniform_filter1d is not None:
+            smooth_e = uniform_filter1d(energy, size=15, mode='nearest')
+        else:
+            kernel = np.ones(15, dtype=np.float32) / 15.0
+            smooth_e = np.convolve(energy, kernel, mode='same')
+
+        margin_start = max(self.pre_samples, int(0.25 * self.fs))
+        margin_end = min(n_samples - self.post_samples, n_samples - int(0.55 * self.fs))
+
+        peaks = []
+        if margin_end > margin_start + 10:
+            sub = smooth_e[margin_start:margin_end]
+            thresh = max(0.18 * float(np.percentile(sub, 96)), 1e-4)
+            refractory = int(min_rr_sec * self.fs)
+
+            # Collect local maxima above threshold and apply greedy non-max suppression
+            local_max_mask = (sub[1:-1] >= sub[:-2]) & (sub[1:-1] >= sub[2:]) & (sub[1:-1] > thresh)
+            cand_indices = np.where(local_max_mask)[0] + 1 + margin_start
+            # Sort candidates descending by smoothed QRS energy
+            order = np.argsort(smooth_e[cand_indices])[::-1]
+            for ci in cand_indices[order]:
+                if all(abs(int(ci) - p) >= refractory for p in peaks):
+                    peaks.append(int(ci))
+            peaks.sort()
+
+        if len(peaks) >= 2:
+            rr_samples = np.diff(peaks)
+            median_rr_sec = float(np.median(rr_samples)) / self.fs
+            hr_bpm = float(np.clip(60.0 / max(median_rr_sec, 0.25), 30.0, 240.0))
+        else:
+            hr_bpm = 75.0
+
+        if len(peaks) == 0:
+            dom_beat, dom_r = self.extract_dominant_beat(ecg)
+            beats_out = np.zeros((max_beats, 12, self.window_size), dtype=np.float32)
+            beats_out[0] = dom_beat
+            return beats_out, 1, hr_bpm
+
+        # Select up to max_beats evenly spaced across the 10s strip
+        if len(peaks) > max_beats:
+            sel_idx = np.linspace(0, len(peaks) - 1, max_beats, dtype=int)
+            selected_peaks = [peaks[i] for i in sel_idx]
+        else:
+            selected_peaks = peaks
+
+        # EDGE-03: Right-tail cosine taper on +340ms..+520ms (indices 135..180) when HR > 150 bpm
+        tukey_mask = None
+        if hr_bpm > 150.0:
+            tukey_mask = np.ones(self.window_size, dtype=np.float32)
+            taper_start = min(135, self.window_size - 10)
+            taper_len = self.window_size - taper_start
+            phase = np.linspace(0.0, np.pi, taper_len, dtype=np.float32)
+            tukey_mask[taper_start:] = 0.5 * (1.0 + np.cos(phase))
+
+        beats_list = []
+        for r_peak in selected_peaks:
+            start = max(0, r_peak - self.pre_samples)
+            end = start + self.window_size
+            if end > n_samples:
+                end = n_samples
+                start = max(0, end - self.window_size)
+            beat = ecg[start:end, :]
+            if beat.shape[0] < self.window_size:
+                pad = self.window_size - beat.shape[0]
+                beat = np.pad(beat, ((0, pad), (0, 0)), mode='edge')
+            beat_norm = np.clip(beat / 2.0, -1.0, 1.0).T.astype(np.float32)
+            if tukey_mask is not None:
+                beat_norm = beat_norm * tukey_mask.reshape(1, -1)
+            beats_list.append(beat_norm)
+
+        n_valid = len(beats_list)
+        beats_out = np.zeros((max_beats, 12, self.window_size), dtype=np.float32)
+        for k in range(n_valid):
+            beats_out[k] = beats_list[k]
+
+        return beats_out, n_valid, hr_bpm
+
 
 class EndToEndECGPreprocessor:
     """
@@ -221,3 +322,25 @@ class EndToEndECGPreprocessor:
         quality["r_peak_idx"] = r_peak
 
         return beat, quality
+
+    def process_multibeat(self, ecg_raw_500hz: np.ndarray, max_beats: int = 8) -> Tuple[np.ndarray, int, Dict]:
+        """
+        Extracts up to `max_beats` clean normalized beats per 10s ECG recording
+        with EDGE-02 transient clipping and EDGE-03 extreme-HR Tukey protection.
+        """
+        ecg_mv = ecg_raw_500hz.astype(np.float32) / 1000.0
+        # EDGE-02: Clamp extreme static/EMG transients to [-5.0, +5.0] mV after SQI saturation check
+        ecg_250 = ecg_mv[::2, :]
+        ecg_detrended = self.swma.filter_multichannel(ecg_250)
+        ecg_clean = self.bandpass_notch.filter_multichannel(ecg_detrended)
+
+        quality = self.sqi.evaluate(ecg_clean, fs=self.target_fs)
+        if not quality["is_valid"]:
+            return np.zeros((max_beats, 12, self.window_size), dtype=np.float32), 0, quality
+
+        # Clamp non-fault occasional EMG spikes to [-5.0, 5.0] mV per EDGE-02
+        ecg_clean = np.clip(ecg_clean, -5.0, 5.0)
+        beats, n_valid, hr_bpm = self.slicer.extract_multibeat_windows(ecg_clean, max_beats=max_beats)
+        quality["n_valid_beats"] = n_valid
+        quality["hr_bpm"] = hr_bpm
+        return beats, n_valid, quality

@@ -10,3 +10,5 @@ data/cache/
 firmware/test_firmware
 .ipynb_checkpoints/
 .company/
+*.elf
+*.map

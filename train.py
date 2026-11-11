@@ -207,6 +207,7 @@ def main():
     parser = argparse.ArgumentParser(description="Cheb-TinyKAN Training Pipeline")
     parser.add_argument("--data_dir", type=str, default="./data/ptb-xl", help="Path to PTB-XL root")
     parser.add_argument("--cache_path", type=str, default=None, help="Optional path to preprocessed .npz cache")
+    parser.add_argument("--multibeat_cache", type=str, default=None, help="Optional path to multi-beat Q1.15 .npz cache for train beat augmentation")
     parser.add_argument("--arch", type=str, default="baseline", choices=["baseline", "temporal_zones"], help="Tokenizer architecture")
     parser.add_argument("--epochs", type=int, default=60, help="Training epochs")
     parser.add_argument("--batch_size", type=int, default=128, help="Batch size")
@@ -243,6 +244,13 @@ def main():
         num_workers=2 if device.type == 'cuda' else 0,
         cache_path=args.cache_path
     )
+    if args.multibeat_cache is not None and os.path.exists(args.multibeat_cache):
+        from torch.utils.data import DataLoader
+        from data.ptbxl_dataset import MultiBeatCachedPTBXLDataset
+        mb_train = MultiBeatCachedPTBXLDataset(args.multibeat_cache, folds=list(range(1, 9)), mode="random_beat", seed=args.seed)
+        train_loader = DataLoader(mb_train, batch_size=args.batch_size, shuffle=True, num_workers=0)
+        print(f"🫀 Multi-Beat Train Augmentation Enabled: sampling random valid R-peaks from {args.multibeat_cache}")
+
     print(f"Train samples (Folds 1-8): {len(train_loader.dataset)}")
     print(f"Val samples   (Fold 9):    {len(val_loader.dataset)}")
     print(f"Test samples  (Fold 10):   {len(test_loader.dataset)}")

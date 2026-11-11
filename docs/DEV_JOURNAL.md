@@ -185,6 +185,29 @@ python3 test_local.py
   - Bổ sung `cheb_tinykan_infer_calibrated` hỗ trợ gập BatchNorm (`fold_conv_bn`), dịch bit theo tầng $Q$-format, và bảng tra LUT `tanh` 257 điểm nội suy tuyến tính trên $[-4, +4]$ cho phép `cheb_sigmoid_lut_q15` đạt độ chính xác cực cao.
 - **Script Kiểm định Hậu Huấn luyện (`scripts/evaluate_clinical_and_edge.py`):** Đánh giá tự động `AC-06/07` (trích xuất phương trình đại số & báo động lâm sàng), `AC-08` (đối sánh trực tiếp nhị phân C99 vs PyTorch trên 500 nhịp Fold 10), và `AC-09` (nghiên cứu cắt bỏ EASI Dower trên toàn bộ 2.198 ca Fold 10).
 
+### 4.6. Nâng Cấp Multi-Beat Consensus 10s, EDGE-02/03/05 & Đối Chứng IEEE (`baselines.py`)
+- **Trích xuất Đa nhịp & Bảo vệ Nhịp Nhanh (`data/dsp_preprocessing.py` + `scripts/prepare_multibeat_cache.py`):**
+  - Bổ sung `extract_multibeat_windows` lấy tối đa `8` nhịp R-peak độc lập mỗi bản ghi 10s (với khoảng trơ `0.30s`), lưu gọn dưới dạng **`int16` Q1.15** (`data/cache/ptbxl_multibeat_250hz.npz`, `616,70 MB`, trung bình `7,98 nhịp/bản ghi`, tổng `173.414` nhịp sạch) tại [`docs/multibeat_cache_audit.json`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/multibeat_cache_audit.json).
+  - Thực thi **`EDGE-03`**: Tự động ước lượng tần số tim $HR$; phát hiện `114` ca nhịp tim cực nhanh ($HR > 150\text{ bpm}$) và áp dụng suy giảm cosine nửa đuôi (Tukey right-tail từ $+340\text{ ms}..+520\text{ ms}$) để bảo toàn QRS & đoạn ST nhưng triệt tiêu sóng P/T nhịp kế.
+- **Triển khai `EDGE-02` Rail Priority & `EDGE-05` Vùng Giám Sát Mập Mờ:**
+  - Sửa thứ tự kiểm tra trong [`cheb_verify_sqi_q15`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/firmware/cheb_tinykan_cmsis.c#L132-L160) để bắt bão hòa nguồn rail (`EDGE-02`, `CHEB_STATUS_SATURATION`) trước kiểm tra flatline (`EDGE-01`), ngăn trạng thái kẹt rail bị nhận nhầm thành mất điện cực.
+  - Bổ sung `SymbolicMorphometricDistiller.classify_clinical_state` (Python) và `cheb_classify_clinical_state` / `cheb_multibeat_aggregate` (C99) thực thi luồng `EDGE-05` (`SUSPECTED_ISCHEMIA_MONITOR_TREND` cho xác suất `45%–65%`).
+- **Kết quả Multi-Beat Zero-Retrain trên Run #2 (`docs/multibeat_consensus_run2.json`):**
+  - Chỉ dùng lại trọng số Run #2 (`10.387` active params) và chọn `trimmed_mean_prob` trên Val Fold 9, đánh giá Fold 10 tăng vọt: **`Macro-AUC = 0,9360`** (vượt mốc `0,93` của `AC-01`!), **`Macro-F1@0.50 = 68,77%`** (`+2,11%`), `AMI AUC = 0,9565`, `SMI AUC = 0,9658`.
+- **Đối Chứng Kiến Trúc `MLPTinyBaseline` & `ResNet1DBaseline` (`models/baselines.py` + `scripts/train_baselines.py`):**
+  - `MLP-Tiny` (`24.157 params` — gấp **2,33×** Cheb-TinyKAN Run #2) chạy cùng Tokenizer + `--auto_alpha` trong `1,31 phút` CPU chỉ đạt Fold 10 `Macro-AUC = 0,9252`, `F1@0.50 = 65,79%`, `Sens = 69,28%`.
+  - `ResNet1D` (`547.973 params` — gấp **52,8×** Cheb-TinyKAN, `11,25 KB` INT16 Peak Act) chạy `30 epochs` trên CPU trong `11,43 phút` đạt Fold 10 `Macro-AUC = 0,9343`, `F1@0.50 = 68,93%` (`@Calib = 68,37%`).
+  - `InceptionTime` (`457.349 params`, `45,00 KB` INT16 Peak Act) đo 1 epoch CPU tốn **`131,45s/epoch` (~87,6 phút/40 epochs)** $\implies$ Định tuyến sang [`scripts/train_colab.sh`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/scripts/train_colab.sh) dành cho Colab T4 GPU.
+- **Run #4 (`train.py --multibeat_cache`) — Huấn luyện Đa nhịp + Đồng Thuận 10s:**
+  - Huấn luyện 60 epochs chỉ trong **`2,20 phút`** (`131,98s` CPU) với `10.387` active params: Fold 10 đơn nhịp đạt `Macro-AUC = 0,9302` (`F1 = 66,43%`); khi kết hợp **10s Multi-Beat Consensus (`trimmed_mean_prob`)** đạt **`Macro-AUC = 0,9447`**, **`Macro-F1@Calib = 69,73%`**, **`Spec = 92,96%`** (vượt cả `ResNet1D` 52,8× lần kích thước!), kèm `AC-08` C99 Max Error **`0,1927%`** (`0/2500` đảo nhãn, [`docs/ac_verification_report_run4.json`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/ac_verification_report_run4.json)).
+
+### 4.7. Biên Dịch Thực Tế STM32F411RE Cortex-M4F ELF & Nguyên Mẫu ESP32-S3
+- **Xuất trọng số thực Run #2 & Run #4 (`scripts/export_c_weights.py`):** Đóng băng toàn bộ trọng số gập BatchNorm và bảng tra Q-shift thành hằng số Flash C99 tại `firmware/cheb_tinykan_weights_run2.h` và `firmware/cheb_tinykan_weights_run4.h` (`35.388 bytes` uncompressed Q1.15/Q31).
+- **Biên dịch chéo ARM Cortex-M4F bằng STMicroelectronics `arm-none-eabi-gcc 14.3.1` (`docs/embedded_build_report.json`):**
+  - Bổ sung [`firmware/targets/stm32f411/main_stm32f411.c`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/firmware/targets/stm32f411/main_stm32f411.c) + `stm32f411re.ld` + `Makefile` mặc định gắn trọng số Run #4 (`CHEB_USE_RUN2` tùy chọn), kích hoạt FPU và thanh ghi `DWT->CYCCNT`; vá [`cheb_tinykan_cmsis.h#L98-L110`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/firmware/cheb_tinykan_cmsis.h#L98-L110) dùng inline ARM `smlad`.
+  - Kết quả đo thực tế `arm-none-eabi-size -B stm32f411_cheb.elf`: **`.text + .rodata = 38.316 bytes (37,42 KB < 45 KB)`**, **`.data = 0`**, **`.bss = 12.968 bytes (12,66 KB < 14,0 KB per `AC-04`)**, kèm `2` chỉ thị phần cứng `smlad` trong binary disassembly.
+- **Mục tiêu ESP32-S3 (`firmware/targets/esp32s3/main_esp32s3.c`) & Sách Mã Nguồn 4 Tầng (`docs/PROJECT_DEEPDIVE.md`):** Hoàn thiện BLE GATT + OLED (`EDGE-01/02/05`), qua sạch kiểm thử `11/11` `test_local.py`, `6/6` ASan/UBSan + `-Werror` trên [`test_firmware.c`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/firmware/test_firmware.c), và đồng bộ đặc tả [`PRD-01 v1.1-Synced`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/prd/PRD-01-CHEB-TINYKAN.md).
+
 ---
 
 ## 5. HƯỚNG DẪN THỰC THI HYBRID (LOCAL-FIRST & COLAB GPU KHI CẦN)

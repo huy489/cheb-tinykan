@@ -15,37 +15,50 @@ exe/topic1/
 │   │   ├── RES-01-KAN-TINYEDGE.md # Nghiên cứu 7 biến thể KAN & thiết kế kiến trúc
 │   │   └── CONSENSUS-01-CHEB-TINYKAN.md # Biên bản đồng thuận R&D + CA Red Team
 │   ├── prd/                       # Yêu cầu kỹ thuật & Nghiệp vụ (BA Department)
-│   │   └── PRD-01-CHEB-TINYKAN.md # Bản đặc tả sản xuất v1.0, 9 ACs & 5 Edge Cases
+│   │   └── PRD-01-CHEB-TINYKAN.md # Bản đặc tả sản xuất v1.1-Synced (AC-01..09 & EDGE-01..05)
 │   ├── bugs/                      # Nhật ký lỗi & phản hồi từ QA
 │   ├── qa/                        # Kế hoạch kiểm thử & Biên bản nghiệm thu (Sign-off)
 │   └── docs/                      # Tài liệu kỹ thuật & Giải phẫu mã nguồn
-│       └── ARCHITECTURE_DEEPDIVE.md # Bản vẽ kỹ thuật toàn cảnh: DSP, Layers & KAN Activations
+│       ├── ARCHITECTURE_DEEPDIVE.md # Bản vẽ kỹ thuật toàn cảnh: DSP, Layers & KAN Activations
+│       └── PROJECT_DEEPDIVE.md    # Sách giải phẫu mã nguồn 4 tầng (/explain)
 ├── firmware/                      # Động cơ C99 nhúng tối ưu hóa ARM CMSIS-NN (__SMLAD)
-│   ├── cheb_tinykan_cmsis.h       # Khai báo cấu trúc, giao diện Q1.15 & bẫy phòng vệ SQI
-│   ├── cheb_tinykan_cmsis.c       # C99 chuẩn, bộ đệm Ping-Pong tĩnh (Peak RAM 4.22 KB)
-│   └── test_firmware.c            # Test harness C99 đo độ trễ vi giây & kiểm định bit-exact
+│   ├── cheb_tinykan_cmsis.h       # Interface C99, inline ASM smlad, EDGE-05 & Multi-beat
+│   ├── cheb_tinykan_cmsis.c       # C99 calibrated + Q1.15, Ping-Pong RAM 4.22 KB, LUT 257-pt
+│   ├── cheb_tinykan_weights_run2.h# Trọng số Run #2 gập BatchNorm đóng băng cho Flash MCU
+│   ├── test_firmware.c            # Bộ kiểm định 6/6 C99 harness (ASan/UBSan & -O3 -Werror)
+│   └── targets/                   # Mã nguồn biên dịch mục tiêu phần cứng nhúng
+│       ├── stm32f411/             # Bare-metal Cortex-M4F ELF (arm-none-eabi-gcc + DWT cycles)
+│       └── esp32s3/               # ESP-IDF BLE GATT + OLED showcase component
 ├── models/                        # Kiến trúc mạng nơ-ron PyTorch & Định lượng KAN
-│   ├── cheb_kan.py                # Tầng Cheb-KAN bậc 4, truy hồi 3 phần tử, L1 Sparsification
-│   ├── model.py                   # 1D-CNN Tokenizer + Bottleneck KAN + 5 Sigmoid Heads
+│   ├── cheb_kan.py                # Tầng Cheb-KAN bậc 4, truy hồi 3 phần tử, Group-L1 & edge_mask
+│   ├── model.py                   # 1D-CNN Tokenizer (`baseline` / `temporal_zones`) + ChebTinyKAN
+│   ├── baselines.py               # Mô hình đối chứng IEEE (MLPTiny, ResNet1D, InceptionTime1D)
 │   ├── quantization.py            # Mô phỏng Q1.15, FakeQuant, L1 Edge Pruning & C Header Export
-│   └── symbolic_distillation.py   # Chuyển đổi đại số đa thức chính tắc & báo động lâm sàng
+│   └── symbolic_distillation.py   # Ma trận đại số M, cảnh báo lâm sàng & phân luồng EDGE-05
 ├── data/                          # Xử lý dữ liệu & Chuỗi DSP tại biên
-│   ├── dsp_preprocessing.py       # Bộ lọc SWMA vector hóa (W=151), IIR filtfilt(axis=0), SQI & R-Slicer
-│   ├── easi_dower.py              # Ma trận Dower 12x3 phục vụ Ablation Study rút gọn đạo trình
-│   ├── ptbxl_dataset.py           # Native int16 loader + CachedPTBXLDataset RAM cache (167.5 MB)
+│   ├── dsp_preprocessing.py       # SWMA (W=151), IIR filtfilt, SQI (EDGE-01/02), Multi-beat (EDGE-03)
+│   ├── easi_dower.py              # Ma trận Dower 12x3 phục vụ Ablation Study AC-09
+│   ├── ptbxl_dataset.py           # Native int16 loader, RAM Cache đơn nhịp & đa nhịp Q1.15
 │   └── scp_mapping.py             # Ánh xạ SCP-ECG 5 phân vùng giải phẫu (NORM, AMI, IMI, LMI, SMI)
-├── docs/                          # Tài liệu kỹ thuật & Liêm chính Khoa học
+├── docs/                          # Tài liệu kỹ thuật, kiểm toán JSON & Liêm chính Khoa học
+│   ├── PROJECT_DEEPDIVE.md        # Sách giải phẫu mã nguồn 4 tầng (/explain)
 │   ├── ARCHITECTURE_DEEPDIVE.md   # Bản vẽ kỹ thuật toàn cảnh: DSP, Layers & KAN Activations
 │   ├── DEV_JOURNAL.md             # Nhật ký thay đổi mã nguồn chi tiết của Dev
 │   ├── SCIENTIFIC_INTEGRITY_LOG.md# Nhật ký minh chứng liêm chính khoa học & SHA-256 checksums
+│   ├── ac_verification_report.json# Kiểm định tự động AC-06/07/08/09
 │   └── cache_audit.json           # Biên bản kiểm toán Zero Data Leakage across Folds 1-10
 ├── losses/                        # Hàm mất mát tối ưu hóa biên
-│   └── focal_loss.py              # Multi-Label Focal Loss (gamma=2.0, alpha=0.25)
-├── scripts/                       # Tự động hóa tiền xử lý & Colab
-│   ├── prepare_cache.py           # Tiền xử lý DSP đa nhân local (33.9s cho toàn bộ 21,799 bản ghi)
-│   └── train_colab.sh             # Script chạy GPU 1-Click trên Colab khi cần đối chứng mạng lớn
-├── train.py                       # Script huấn luyện & đối chuẩn Inter-patient 10-fold (hỗ trợ --resume & AUC)
-├── test_local.py                  # Bộ kiểm thử tự động toàn diện mở rộng (10/10 tests passed)
+│   └── focal_loss.py              # Multi-Label Focal Loss (hỗ trợ scalar alpha & vector auto_alpha)
+├── scripts/                       # Tự động hóa tiền xử lý, kiểm định & Colab GPU
+│   ├── prepare_cache.py           # Tiền xử lý DSP đơn nhịp (33.9s cho toàn bộ 21,799 bản ghi)
+│   ├── prepare_multibeat_cache.py # Tiền xử lý 8 nhịp/bản ghi Q1.15 (38.8s, 173,414 nhịp sạch)
+│   ├── evaluate_clinical_and_edge.py # Chưng cất ký hiệu, C99 500 nhịp (AC-08) & EASI (AC-09)
+│   ├── evaluate_multibeat_consensus.py # Đánh giá đồng thuận đa nhịp 10s trên Fold 9 -> Fold 10
+│   ├── train_baselines.py         # Benchmark đối chứng MLP-Tiny / ResNet1D / InceptionTime
+│   ├── export_c_weights.py        # Xuất trọng số Run #2 sang Flash header C99
+│   └── train_colab.sh             # Script Colab T4 GPU cho các mô hình CNN nặng
+├── train.py                       # Pipeline huấn luyện chuẩn hóa (Folds 1-8 / 9 / 10, --auto_alpha)
+├── test_local.py                  # Bộ kiểm thử tự động toàn diện mở rộng (11/11 tests passed)
 ├── colab_sync.py                  # Cầu nối Service Account tự động kéo kết quả từ Drive
 └── README.md                      # Giới thiệu tổng quan workspace
 ```
@@ -53,25 +66,19 @@ exe/topic1/
 ---
 
 ## 🎯 Trạng thái Hiện tại
-- **Chiến lược thực thi:** **Hybrid Local-First** — Toàn bộ DSP (33,9s cho 21.799 bản ghi), kiểm thử PyTorch (`test_local.py`), biên dịch C99 (`test_firmware.c`), và huấn luyện 60 epochs Cheb-TinyKAN (~3s/epoch qua RAM Cache) được thực thi trực tiếp tại máy Local; chỉ đẩy lên Colab GPU cho các mô hình đối chứng nặng.
-- **Kiểm định chất lượng:** Bộ kiểm định [`test_local.py`](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/test_local.py) đã vượt qua **10/10 bài kiểm tra** với độ chính xác 100%:
-  1. Toán học truy hồi Chebyshev 3 phần tử (Sai số < 0.05% trên miền $[-1, 1]$).
-  2. Ánh xạ đa nhãn lâm sàng SCP-ECG (Tách biệt 5 đầu ra độc lập).
-  3. Đọc dữ liệu nhị phân PTB-XL Fold 10 & Slicer nhịp (180 mẫu/nhịp).
-  4. Hạch toán ngân sách tham số TinyML (<12,000 tham số sau khi tỉa L1 70%).
-  5. Ma trận đại số đóng chuyển đổi hệ đa thức Chebyshev sang đơn thức chính tắc.
-  6. Bộ lượng tử hóa Q1.15 & thuật toán cắt tỉa L1 KAN Edge Pruning.
-  7. Bộ tái tạo 12 đạo trình EASI Dower (Ablation Study AC-09).
-  8. Mô-đun chưng cất ký hiệu & sinh chuỗi cảnh báo lâm sàng cho bác sĩ tim mạch.
-  9. Biên dịch và thực thi nhị phân động cơ C99 CMSIS-NN (Độ trễ 0.20 ms/nhịp, Peak RAM 4.22 KB).
-  10. Kiểm thử Forward + Multi-Label Focal Loss + PyTorch Autograd Backward (Gradient sạch, hữu hạn).
+- **Chiến lược thực thi:** **Hybrid Local-First + Cloud GPU** — Toàn bộ DSP (đơn nhịp 33,9s / đa nhịp 38,8s), kiểm thử PyTorch (`test_local.py`: **11/11 suites**), kiểm thử C99 (`test_firmware.c`: **6/6 suites** với ASan/UBSan & `-Wall -Wextra -Werror`), biên dịch ARM Cortex-M4 (`arm-none-eabi-gcc`: `.text=38,316 B`, `.bss=12,968 B = 12.66 KB`), và huấn luyện `Cheb-TinyKAN` / `MLP-Tiny` chạy trực tiếp tại local; chỉ định tuyến các mạng nặng như `InceptionTime` (~131s/epoch trên CPU) & `ResNet1D` lên Colab T4 GPU.
+- **Thành tựu nổi bật trên Zero-Leakage Fold 10 (Run #2 — `10,387` active params):**
+  - **Đơn nhịp (180 mẫu):** `Macro-AUC = 0.9264`, `Macro-F1@0.50 = 66.66%`, `Sens = 70.98%`.
+  - **Đồng thuận Đa nhịp 10s (`trimmed_mean_prob` chọn trên Fold 9):** **`Macro-AUC = 0.9360`** (vượt mốc `0.93` của `AC-01`), `Macro-F1@0.50 = 68.77%`.
+  - **Chính xác Lượng tử hóa C99 (`AC-08` trên 500 nhịp):** Max Error **`0.2952%`** (`< 1.5%`), **`0/2500` đảo nhãn**, **`0.311 ms/nhịp`**.
 
 ---
 
 ## 🔗 Liên kết Nhanh
+- [📘 Sách Giải Phẫu Mã Nguồn 4 Tầng (Project Deep-Dive)](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/PROJECT_DEEPDIVE.md)
 - [🛡️ Nhật ký Chỉnh sửa & Liêm chính Khoa học](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/SCIENTIFIC_INTEGRITY_LOG.md)
 - [📜 Nhật ký Kỹ thuật Dev](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/DEV_JOURNAL.md)
 - [📘 Bản Vẽ Kiến Trúc Toàn Cảnh (DSP & Layers)](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/docs/ARCHITECTURE_DEEPDIVE.md)
 - [📋 Kanban Board](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/BOARD.md)
-- [📋 Bản Đặc tả Sản xuất PRD-01](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/prd/PRD-01-CHEB-TINYKAN.md)
+- [📋 Bản Đặc tả Sản xuất PRD-01 (v1.1-Synced)](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/prd/PRD-01-CHEB-TINYKAN.md)
 - [🤝 Biên bản Đồng thuận Khoa học Tam bên](file:///home/pd/hcmus_queue/lab_dientuysinh/project/exe/topic1/.company/research/CONSENSUS-01-CHEB-TINYKAN.md)

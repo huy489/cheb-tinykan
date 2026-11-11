@@ -1,0 +1,23 @@
+{
+  "target_mcu": "STM32F411RE (ARM Cortex-M4F, 512KB Flash / 128KB SRAM)",
+  "weights_source": "Run #4 Multi-Beat Pruned (cheb_tinykan_weights_run4.h)",
+  "compiler": "arm-none-eabi-gcc 14.3.1 (STM32CubeIDE 2.2.0)",
+  "flags": "-std=c99 -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -Os -Wall -Wextra -Werror",
+  "text_plus_rodata_bytes": 38316,
+  "text_plus_rodata_kb": 37.42,
+  "data_bytes": 0,
+  "bss_bytes": 12968,
+  "total_static_sram_bytes": 12968,
+  "total_static_sram_kb": 12.66,
+  "peak_ping_pong_activation_sram_bytes": 4320,
+  "peak_ping_pong_activation_sram_kb": 4.22,
+  "unpacked_q15_q31_const_weights_bytes": 35388,
+  "estimated_sparse_int8_weights_bytes": 10387,
+  "arm_smlad_instructions_emitted": 2,
+  "ac03_flash_lt_45kb_uncompressed_pass": true,
+  "ac04_system_sram_lt_14kb_pass": true,
+  "hardware_bench_pending": [
+    "STM32F411RE GPIO/DWT @ 100MHz",
+    "ESP32-S3 xtensa-esp32s3-elf-gcc + BLE/OLED @ 240MHz"
+  ]
+}

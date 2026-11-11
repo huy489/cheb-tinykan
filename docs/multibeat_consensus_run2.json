@@ -1,0 +1,251 @@
+{
+  "checkpoint": "checkpoints/run2_balanced_pruned/model_best.pth",
+  "multibeat_cache": "data/cache/ptbxl_multibeat_250hz.npz",
+  "arch": "baseline",
+  "budget": {
+    "tokenizer_params": 6872,
+    "bottleneck_kan_params": 9240,
+    "decision_kan_params": 725,
+    "total_params": 16837,
+    "active_total_params": 10387,
+    "budget_limit": 12000,
+    "within_budget": true
+  },
+  "val_strategy_sweep": {
+    "mean_prob": {
+      "val_macro_f1_05": 0.692237586199741,
+      "val_macro_auc": 0.9344177520508412,
+      "val_macro_sens_05": 0.7195827042473721,
+      "val_macro_spec_05": 0.9278184358319941
+    },
+    "median_prob": {
+      "val_macro_f1_05": 0.6892920431567543,
+      "val_macro_auc": 0.9347327636001015,
+      "val_macro_sens_05": 0.7214228094553731,
+      "val_macro_spec_05": 0.9249616056401158
+    },
+    "mean_logit": {
+      "val_macro_f1_05": 0.6911066880891177,
+      "val_macro_auc": 0.9345395404718557,
+      "val_macro_sens_05": 0.7180140767964532,
+      "val_macro_spec_05": 0.9278747492713821
+    },
+    "trimmed_mean_prob": {
+      "val_macro_f1_05": 0.6923867258491416,
+      "val_macro_auc": 0.9346495136741508,
+      "val_macro_sens_05": 0.7197508999661093,
+      "val_macro_spec_05": 0.9273756990303598
+    },
+    "top2_mean_prob": {
+      "val_macro_f1_05": 0.6418649531797724,
+      "val_macro_auc": 0.9299979511505441,
+      "val_macro_sens_05": 0.8204099416177376,
+      "val_macro_spec_05": 0.8644607923088623
+    }
+  },
+  "selected_method": "trimmed_mean_prob",
+  "val_thresholds": [
+    0.5,
+    0.5099999904632568,
+    0.49000000953674316,
+    0.5400000214576721,
+    0.5199999809265137
+  ],
+  "val_metrics_05": {
+    "macro_f1": 0.6923867258491416,
+    "macro_auc": 0.9346495136741508,
+    "macro_sensitivity": 0.7197508999661093,
+    "macro_specificity": 0.9273756990303598,
+    "per_class": {
+      "NORM": {
+        "f1": 0.8481831707130061,
+        "auc": 0.9365183246073299,
+        "sensitivity": 0.8921465968492969,
+        "specificity": 0.8355048859866816,
+        "threshold": 0.5,
+        "support": 955
+      },
+      "AMI": {
+        "f1": 0.7252396115927489,
+        "auc": 0.9520215473864915,
+        "sensitivity": 0.7418300653352343,
+        "specificity": 0.9504528502879571,
+        "threshold": 0.5,
+        "support": 306
+      },
+      "IMI": {
+        "f1": 0.6513629792184171,
+        "auc": 0.9167177449119477,
+        "sensitivity": 0.6941896024252541,
+        "specificity": 0.9229525862019238,
+        "threshold": 0.5,
+        "support": 327
+      },
+      "LMI": {
+        "f1": 0.5182186184438362,
+        "auc": 0.9107529487800937,
+        "sensitivity": 0.5333333332888889,
+        "specificity": 0.9694619486138175,
+        "threshold": 0.5,
+        "support": 120
+      },
+      "SMI": {
+        "f1": 0.7189292492777001,
+        "auc": 0.9572370026848914,
+        "sensitivity": 0.7372549019318724,
+        "specificity": 0.9585062240614186,
+        "threshold": 0.5,
+        "support": 255
+      }
+    }
+  },
+  "val_metrics_calibrated": {
+    "macro_f1": 0.6959432263224548,
+    "macro_auc": 0.9346495136741508,
+    "macro_sensitivity": 0.7147559968066027,
+    "macro_specificity": 0.9284511467637155,
+    "per_class": {
+      "NORM": {
+        "f1": 0.8481831707130061,
+        "auc": 0.9365183246073299,
+        "sensitivity": 0.8921465968492969,
+        "specificity": 0.8355048859866816,
+        "threshold": 0.5,
+        "support": 955
+      },
+      "AMI": {
+        "f1": 0.7293354893040777,
+        "auc": 0.9520215473864915,
+        "sensitivity": 0.7352941176230295,
+        "specificity": 0.954182205642226,
+        "threshold": 0.5099999904632568,
+        "support": 306
+      },
+      "IMI": {
+        "f1": 0.6519944929692033,
+        "auc": 0.9167177449119477,
+        "sensitivity": 0.7247706421796706,
+        "specificity": 0.9121767241330163,
+        "threshold": 0.49000000953674316,
+        "support": 327
+      },
+      "LMI": {
+        "f1": 0.5286343562033031,
+        "auc": 0.9107529487800937,
+        "sensitivity": 0.4999999999583334,
+        "specificity": 0.977217644202728,
+        "threshold": 0.5400000214576721,
+        "support": 120
+      },
+      "SMI": {
+        "f1": 0.7215686224226836,
+        "auc": 0.9572370026848914,
+        "sensitivity": 0.7215686274226836,
+        "specificity": 0.9631742738539255,
+        "threshold": 0.5199999809265137,
+        "support": 255
+      }
+    }
+  },
+  "test_metrics_05": {
+    "macro_f1": 0.6876915178946391,
+    "macro_auc": 0.9360132412345262,
+    "macro_sensitivity": 0.7187131813871768,
+    "macro_specificity": 0.9238970395506534,
+    "per_class": {
+      "NORM": {
+        "f1": 0.8510223903373237,
+        "auc": 0.9331525554840853,
+        "sensitivity": 0.9075804776645111,
+        "specificity": 0.8242914979690341,
+        "threshold": 0.5,
+        "support": 963
+      },
+      "AMI": {
+        "f1": 0.7252396115927489,
+        "auc": 0.9564678937113957,
+        "sensitivity": 0.7418300653352343,
+        "specificity": 0.9508456659569194,
+        "threshold": 0.5,
+        "support": 306
+      },
+      "IMI": {
+        "f1": 0.6329113874171796,
+        "auc": 0.9186464718925265,
+        "sensitivity": 0.6859756097351837,
+        "specificity": 0.9155080213854786,
+        "threshold": 0.5,
+        "support": 328
+      },
+      "LMI": {
+        "f1": 0.5064377631969644,
+        "auc": 0.906036299116549,
+        "sensitivity": 0.504273504230404,
+        "specificity": 0.9726093224364604,
+        "threshold": 0.5,
+        "support": 117
+      },
+      "SMI": {
+        "f1": 0.7228464369289793,
+        "auc": 0.9657629859680742,
+        "sensitivity": 0.7539062499705506,
+        "specificity": 0.9562306900053748,
+        "threshold": 0.5,
+        "support": 256
+      }
+    }
+  },
+  "test_metrics_calibrated": {
+    "macro_f1": 0.6760419430458872,
+    "macro_auc": 0.9360132412345262,
+    "macro_sensitivity": 0.6907360027913391,
+    "macro_specificity": 0.9264191901981708,
+    "per_class": {
+      "NORM": {
+        "f1": 0.8510223903373237,
+        "auc": 0.9331525554840853,
+        "sensitivity": 0.9075804776645111,
+        "specificity": 0.8242914979690341,
+        "threshold": 0.5,
+        "support": 963
+      },
+      "AMI": {
+        "f1": 0.7258064465903226,
+        "auc": 0.9564678937113957,
+        "sensitivity": 0.7352941176230295,
+        "specificity": 0.9529598308617708,
+        "threshold": 0.5099999904632568,
+        "support": 306
+      },
+      "IMI": {
+        "f1": 0.6363636313925886,
+        "auc": 0.9186464718925265,
+        "sensitivity": 0.7042682926614552,
+        "specificity": 0.9106951871609055,
+        "threshold": 0.49000000953674316,
+        "support": 328
+      },
+      "LMI": {
+        "f1": 0.4422110503866064,
+        "auc": 0.906036299116549,
+        "sensitivity": 0.3760683760362335,
+        "specificity": 0.9817395482893718,
+        "threshold": 0.5400000214576721,
+        "support": 117
+      },
+      "SMI": {
+        "f1": 0.7248061965225948,
+        "auc": 0.9657629859680742,
+        "sensitivity": 0.730468749971466,
+        "specificity": 0.9624098867097713,
+        "threshold": 0.5199999809265137,
+        "support": 256
+      }
+    }
+  },
+  "edge05_fold10_distribution": {
+    "CRITICAL_MI_ALERT": 325,
+    "SUSPECTED_ISCHEMIA_MONITOR_TREND": 373,
+    "NORMAL_SINUS_MONITORING": 1500
+  }
+}

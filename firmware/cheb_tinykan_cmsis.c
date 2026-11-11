@@ -146,14 +146,14 @@ int cheb_verify_sqi_q15(const int16_t *ecg_12x180) {
             }
         }
 
-        /* 1. Flatline check: range < ~0.005 mV (~82 LSBs in Q15) */
-        if ((max_v - min_v) < 80) {
-            return CHEB_STATUS_LEAD_FAULT;
-        }
-
-        /* 2. Clipping check: > 5% points saturated */
+        /* 1. EDGE-02 Clipping / Rail saturation check: > 5% points near rail */
         if (sat_count > (CHEB_ECG_SAMPLE_POINTS / 20)) {
             return CHEB_STATUS_SATURATION;
+        }
+
+        /* 2. EDGE-01 Flatline check: range < ~0.005 mV (~82 LSBs in Q15) */
+        if (((int32_t)max_v - (int32_t)min_v) < 80) {
+            return CHEB_STATUS_LEAD_FAULT;
         }
     }
     return CHEB_STATUS_OK;
@@ -700,6 +700,63 @@ int cheb_tinykan_infer_calibrated(
     result->is_mi_detected = (max_mi_prob >= 0.50f);
     result->primary_territory = (max_mi_idx > 0) ? max_mi_idx : CLASS_IDX_NORM;
     result->confidence = result->is_mi_detected ? max_mi_prob : result->probabilities[CLASS_IDX_NORM];
+
+    return CHEB_STATUS_OK;
+}
+
+ChebClinicalState cheb_classify_clinical_state(const ChebInferenceResult *result) {
+    if (!result) return CHEB_STATE_NORMAL_MONITORING;
+    float max_mi = 0.0f;
+    bool in_borderline = false;
+    for (int i = 1; i < CHEB_KAN_NUM_CLASSES; i++) {
+        float p = result->probabilities[i];
+        if (p > max_mi) max_mi = p;
+        if (p >= 0.45f && p <= 0.65f) {
+            in_borderline = true;
+        }
+    }
+    if (max_mi > 0.65f) {
+        return CHEB_STATE_CRITICAL_MI_ALERT;
+    }
+    if (in_borderline) {
+        return CHEB_STATE_SUSPECTED_ISCHEMIA_MONITOR_TREND;
+    }
+    return CHEB_STATE_NORMAL_MONITORING;
+}
+
+int cheb_multibeat_aggregate(
+    const ChebInferenceResult *beat_results,
+    int n_beats,
+    ChebInferenceResult *out_consensus
+) {
+    if (!beat_results || !out_consensus || n_beats <= 0) {
+        return CHEB_STATUS_INVALID_PARAM;
+    }
+    memset(out_consensus, 0, sizeof(ChebInferenceResult));
+
+    for (int b = 0; b < n_beats; b++) {
+        for (int c = 0; c < CHEB_KAN_NUM_CLASSES; c++) {
+            out_consensus->probabilities[c] += beat_results[b].probabilities[c];
+        }
+        out_consensus->inference_cycles += beat_results[b].inference_cycles;
+    }
+
+    int max_mi_idx = -1;
+    float max_mi_prob = 0.0f;
+    for (int c = 0; c < CHEB_KAN_NUM_CLASSES; c++) {
+        float p = out_consensus->probabilities[c] / (float)n_beats;
+        out_consensus->probabilities[c] = p;
+        if (c > 0 && p > max_mi_prob) {
+            max_mi_prob = p;
+            max_mi_idx = c;
+        }
+    }
+
+    out_consensus->is_mi_detected = (max_mi_prob >= 0.50f);
+    out_consensus->primary_territory = (max_mi_idx > 0) ? max_mi_idx : CLASS_IDX_NORM;
+    out_consensus->confidence = out_consensus->is_mi_detected
+        ? max_mi_prob
+        : out_consensus->probabilities[CLASS_IDX_NORM];
 
     return CHEB_STATUS_OK;
 }

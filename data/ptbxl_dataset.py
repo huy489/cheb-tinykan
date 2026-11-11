@@ -117,12 +117,11 @@ class CachedPTBXLDataset(BASE_DATASET):
         if not os.path.exists(cache_path):
             raise FileNotFoundError(f"Preprocessed cache not found at: {cache_path}")
 
-        data = np.load(cache_path)
-        mask = np.isin(data["folds"], list(folds))
-
-        self.beats = np.ascontiguousarray(data["beats"][mask], dtype=np.float32)
-        self.labels = np.ascontiguousarray(data["labels"][mask], dtype=np.float32)
-        self.folds_arr = data["folds"][mask]
+        with np.load(cache_path) as data:
+            mask = np.isin(data["folds"], list(folds))
+            self.beats = np.ascontiguousarray(data["beats"][mask], dtype=np.float32)
+            self.labels = np.ascontiguousarray(data["labels"][mask], dtype=np.float32)
+            self.folds_arr = data["folds"][mask]
 
     def __len__(self) -> int:
         return len(self.beats)
@@ -133,6 +132,49 @@ class CachedPTBXLDataset(BASE_DATASET):
         if torch is not None:
             return torch.from_numpy(beat), torch.from_numpy(label)
         return beat, label
+
+
+class MultiBeatCachedPTBXLDataset(BASE_DATASET):
+    """
+    RAM-efficient int16 Q1.15 Multi-Beat Dataset backed by ptbxl_multibeat_250hz.npz.
+    mode='random_beat': samples 1 random valid beat from the record's K detected beats (Train augmentation).
+    mode='all_beats': returns (K, 12, 180) float32 tensor, n_valid count, and label (Val/Test consensus).
+    """
+
+    def __init__(self, cache_path: str, folds: List[int], mode: str = "random_beat", seed: int = 42):
+        if not os.path.exists(cache_path):
+            raise FileNotFoundError(f"Multi-beat cache not found at: {cache_path}")
+        if mode not in ("random_beat", "all_beats"):
+            raise ValueError(f"Unsupported mode={mode}")
+
+        with np.load(cache_path) as data:
+            mask = np.isin(data["folds"], list(folds))
+            self.beats_i16 = np.ascontiguousarray(data["beats"][mask], dtype=np.int16)
+            self.n_valid = np.ascontiguousarray(data["n_valid_beats"][mask], dtype=np.int64)
+            self.labels = np.ascontiguousarray(data["labels"][mask], dtype=np.float32)
+            self.sqi_valid = np.ascontiguousarray(data["sqi_valid"][mask], dtype=bool)
+            self.hr_bpms = np.ascontiguousarray(data["hr_bpms"][mask], dtype=np.float32)
+
+        self.mode = mode
+        self.rng = np.random.default_rng(seed)
+
+    def __len__(self) -> int:
+        return len(self.beats_i16)
+
+    def __getitem__(self, idx: int):
+        label = self.labels[idx]
+        nv = int(self.n_valid[idx])
+        if self.mode == "random_beat":
+            k = int(self.rng.integers(0, nv)) if nv > 1 else 0
+            beat = self.beats_i16[idx, k].astype(np.float32) / 32767.0
+            if torch is not None:
+                return torch.from_numpy(beat), torch.from_numpy(label)
+            return beat, label
+
+        beats_all = self.beats_i16[idx].astype(np.float32) / 32767.0
+        if torch is not None:
+            return torch.from_numpy(beats_all), nv, torch.from_numpy(label)
+        return beats_all, nv, label
 
 
 def create_dataloaders(
